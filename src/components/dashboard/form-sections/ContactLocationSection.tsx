@@ -1,0 +1,74 @@
+
+import { FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Control } from "react-hook-form";
+
+interface ContactLocationSectionProps {
+  control: Control<any>;
+}
+
+const ContactLocationSection = ({ control }: ContactLocationSectionProps) => {
+  return (
+    <div className="bg-white/70 p-6 rounded-xl border border-green-100 shadow-sm">
+      <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+        <div className="w-2 h-6 bg-gradient-to-b from-purple-500 to-purple-600 rounded-full mr-3"></div>
+        ข้อมูลติดต่อและที่อยู่
+      </h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <FormField
+          control={control}
+          name="tel"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="text-gray-700 font-medium">โทรศัพท์</FormLabel>
+              <FormControl>
+                <Input 
+                  placeholder="เบอร์โทรศัพท์" 
+                  className="border-gray-200 focus:border-green-500 focus:ring-green-500/20 transition-all duration-200" 
+                  {...field} 
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={control}
+          name="line_id"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="text-gray-700 font-medium">Line ID</FormLabel>
+              <FormControl>
+                <Input 
+                  placeholder="Line ID สำหรับติดต่อ" 
+                  className="border-gray-200 focus:border-green-500 focus:ring-green-500/20 transition-all duration-200" 
+                  {...field} 
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={control}
+          name="region"
+          render={({ field }) => (
+            <FormItem className="md:col-span-2">
+              <FormLabel className="text-gray-700 font-medium">จังหวัด</FormLabel>
+              <FormControl>
+                <Input 
+                  placeholder="จังหวัดที่อยู่ของลูกค้า" 
+                  className="border-gray-200 focus:border-green-500 focus:ring-green-500/20 transition-all duration-200" 
+                  {...field} 
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </div>
+    </div>
+  );
+};
+
+export default ContactLocationSection;

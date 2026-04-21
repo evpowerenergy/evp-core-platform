@@ -1,0 +1,22 @@
+# Cloud Build config สำหรับ build Docker image พร้อมส่ง build-arg ให้ Vite
+# รัน: gcloud builds submit --config=cloudbuild.yaml --substitutions=...
+
+substitutions:
+  _IMAGE: ''  # ต้องส่งตอนรัน เช่น $IMAGE
+  _VITE_SUPABASE_URL: ''
+  _VITE_SUPABASE_ANON_KEY: ''
+
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '--build-arg'
+      - 'VITE_SUPABASE_URL=${_VITE_SUPABASE_URL}'
+      - '--build-arg'
+      - 'VITE_SUPABASE_ANON_KEY=${_VITE_SUPABASE_ANON_KEY}'
+      - '-t'
+      - '${_IMAGE}'
+      - '.'
+
+images:
+  - '${_IMAGE}'

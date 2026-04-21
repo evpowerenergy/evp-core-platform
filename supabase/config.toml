@@ -1,0 +1,246 @@
+project_id = "ttfjapfdzrxmbxbarfbn"
+
+[functions.openai-cost-monitor]
+enabled = true
+verify_jwt = true
+import_map = "./functions/openai-cost-monitor/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/openai-cost-monitor/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/openai-cost-monitor/*.html" ]
+
+[functions.core-leads-lead-management]
+enabled = true
+verify_jwt = false
+import_map = "./functions/core-leads-lead-management/deno.json"
+entrypoint = "./functions/core-leads-lead-management/index.ts"
+
+[functions.core-leads-leads-list]
+enabled = true
+verify_jwt = false
+import_map = "./functions/core-leads-leads-list/deno.json"
+entrypoint = "./functions/core-leads-leads-list/index.ts"
+
+[functions.core-leads-lead-mutations]
+enabled = true
+verify_jwt = false
+import_map = "./functions/core-leads-lead-mutations/deno.json"
+entrypoint = "./functions/core-leads-lead-mutations/index.ts"
+
+[functions.additional-products-products]
+enabled = true
+verify_jwt = false
+import_map = "./functions/additional-products-products/deno.json"
+entrypoint = "./functions/additional-products-products/index.ts"
+
+[functions.core-appointments-appointments]
+enabled = true
+verify_jwt = false
+import_map = "./functions/core-appointments-appointments/deno.json"
+entrypoint = "./functions/core-appointments-appointments/index.ts"
+
+[functions.core-leads-leads]
+enabled = true
+verify_jwt = false
+import_map = "./functions/core-leads-leads/deno.json"
+entrypoint = "./functions/core-leads-leads/index.ts"
+
+[functions.core-leads-leads-complete]
+enabled = true
+verify_jwt = false
+import_map = "./functions/core-leads-leads-complete/deno.json"
+entrypoint = "./functions/core-leads-leads-complete/index.ts"
+
+[functions.core-leads-leads-for-dashboard]
+enabled = true
+verify_jwt = false
+import_map = "./functions/core-leads-leads-for-dashboard/deno.json"
+entrypoint = "./functions/core-leads-leads-for-dashboard/index.ts"
+
+[functions.core-leads-leads-optimized]
+enabled = true
+verify_jwt = false
+import_map = "./functions/core-leads-leads-optimized/deno.json"
+entrypoint = "./functions/core-leads-leads-optimized/index.ts"
+
+[functions.core-leads-lead-detail]
+enabled = true
+verify_jwt = false
+import_map = "./functions/core-leads-lead-detail/deno.json"
+entrypoint = "./functions/core-leads-lead-detail/index.ts"
+
+[functions.core-leads-phone-validation]
+enabled = true
+verify_jwt = false
+import_map = "./functions/core-leads-phone-validation/deno.json"
+entrypoint = "./functions/core-leads-phone-validation/index.ts"
+
+[functions.core-leads-sales-team-list]
+enabled = true
+verify_jwt = false
+import_map = "./functions/core-leads-sales-team-list/deno.json"
+entrypoint = "./functions/core-leads-sales-team-list/index.ts"
+
+[functions.core-my-leads-my-leads]
+enabled = true
+verify_jwt = false
+import_map = "./functions/core-my-leads-my-leads/deno.json"
+entrypoint = "./functions/core-my-leads-my-leads/index.ts"
+
+[functions.core-my-leads-my-leads-data]
+enabled = true
+verify_jwt = false
+import_map = "./functions/core-my-leads-my-leads-data/deno.json"
+entrypoint = "./functions/core-my-leads-my-leads-data/index.ts"
+
+[functions.core-sales-team-sales-team]
+enabled = true
+verify_jwt = false
+import_map = "./functions/core-sales-team-sales-team/deno.json"
+entrypoint = "./functions/core-sales-team-sales-team/index.ts"
+
+[functions.core-sales-team-sales-team-data]
+enabled = true
+verify_jwt = false
+import_map = "./functions/core-sales-team-sales-team-data/deno.json"
+entrypoint = "./functions/core-sales-team-sales-team-data/index.ts"
+
+[functions.core-sales-team-filtered-sales-team]
+enabled = true
+verify_jwt = false
+import_map = "./functions/core-sales-team-filtered-sales-team/deno.json"
+entrypoint = "./functions/core-sales-team-filtered-sales-team/index.ts"
+
+[functions.core-inventory-inventory]
+enabled = true
+verify_jwt = false
+import_map = "./functions/core-inventory-inventory/deno.json"
+entrypoint = "./functions/core-inventory-inventory/index.ts"
+
+[functions.core-inventory-inventory-mutations]
+enabled = true
+verify_jwt = false
+import_map = "./functions/core-inventory-inventory-mutations/deno.json"
+entrypoint = "./functions/core-inventory-inventory-mutations/index.ts"
+
+[functions.core-customer-services-customer-detail]
+enabled = true
+verify_jwt = false
+import_map = "./functions/core-customer-services-customer-detail/deno.json"
+entrypoint = "./functions/core-customer-services-customer-detail/index.ts"
+
+[functions.additional-auth-auth]
+enabled = true
+verify_jwt = false
+import_map = "./functions/additional-auth-auth/deno.json"
+entrypoint = "./functions/additional-auth-auth/index.ts"
+
+[functions.additional-auth-user-data]
+enabled = true
+verify_jwt = false
+import_map = "./functions/additional-auth-user-data/deno.json"
+entrypoint = "./functions/additional-auth-user-data/index.ts"
+
+[functions.additional-inventory-inventory-units]
+enabled = true
+verify_jwt = false
+import_map = "./functions/additional-inventory-inventory-units/deno.json"
+entrypoint = "./functions/additional-inventory-inventory-units/index.ts"
+
+[functions.additional-purchase-orders-purchase-orders]
+enabled = true
+verify_jwt = false
+import_map = "./functions/additional-purchase-orders-purchase-orders/deno.json"
+entrypoint = "./functions/additional-purchase-orders-purchase-orders/index.ts"
+
+[functions.additional-purchase-orders-purchase-order-mutations]
+enabled = true
+verify_jwt = false
+import_map = "./functions/additional-purchase-orders-purchase-order-mutations/deno.json"
+entrypoint = "./functions/additional-purchase-orders-purchase-order-mutations/index.ts"
+
+[functions.additional-customer-customer-services]
+enabled = true
+verify_jwt = false
+import_map = "./functions/additional-customer-customer-services/deno.json"
+entrypoint = "./functions/additional-customer-customer-services/index.ts"
+
+[functions.additional-customer-customer-service-stats]
+enabled = true
+verify_jwt = false
+import_map = "./functions/additional-customer-customer-service-stats/deno.json"
+entrypoint = "./functions/additional-customer-customer-service-stats/index.ts"
+
+[functions.additional-customer-customer-service-mutations]
+enabled = true
+verify_jwt = false
+import_map = "./functions/additional-customer-customer-service-mutations/deno.json"
+entrypoint = "./functions/additional-customer-customer-service-mutations/index.ts"
+
+[functions.additional-customer-customer-service-filters]
+enabled = true
+verify_jwt = false
+import_map = "./functions/additional-customer-customer-service-filters/deno.json"
+entrypoint = "./functions/additional-customer-customer-service-filters/index.ts"
+
+[functions.additional-follow-up-sale-follow-up]
+enabled = true
+verify_jwt = false
+import_map = "./functions/additional-follow-up-sale-follow-up/deno.json"
+entrypoint = "./functions/additional-follow-up-sale-follow-up/index.ts"
+
+[functions.additional-productivity-productivity-logs]
+enabled = true
+verify_jwt = false
+import_map = "./functions/additional-productivity-productivity-logs/deno.json"
+entrypoint = "./functions/additional-productivity-productivity-logs/index.ts"
+
+[functions.system-follow-up-sale-follow-up]
+enabled = true
+verify_jwt = false
+import_map = "./functions/system-follow-up-sale-follow-up/deno.json"
+entrypoint = "./functions/system-follow-up-sale-follow-up/index.ts"
+
+[functions.system-productivity-productivity-log-submission]
+enabled = true
+verify_jwt = false
+import_map = "./functions/system-productivity-productivity-log-submission/deno.json"
+entrypoint = "./functions/system-productivity-productivity-log-submission/index.ts"
+
+[functions.system-openai-sync]
+enabled = true
+verify_jwt = false
+import_map = "./functions/system-openai-sync/deno.json"
+entrypoint = "./functions/system-openai-sync/index.ts"
+
+[functions.system-openai-usage]
+enabled = true
+verify_jwt = false
+import_map = "./functions/system-openai-usage/deno.json"
+entrypoint = "./functions/system-openai-usage/index.ts"
+
+[functions.system-management-products-management]
+enabled = true
+verify_jwt = false
+import_map = "./functions/system-management-products-management/deno.json"
+entrypoint = "./functions/system-management-products-management/index.ts"
+
+[functions.system-management-sales-team-management]
+enabled = true
+verify_jwt = false
+import_map = "./functions/system-management-sales-team-management/deno.json"
+entrypoint = "./functions/system-management-sales-team-management/index.ts"
+
+[functions.system-service-service-appointments]
+enabled = true
+verify_jwt = false
+import_map = "./functions/system-service-service-appointments/deno.json"
+entrypoint = "./functions/system-service-service-appointments/index.ts"
+
+[functions.system-service-service-visits]
+enabled = true
+verify_jwt = false
+import_map = "./functions/system-service-service-visits/deno.json"
+entrypoint = "./functions/system-service-service-visits/index.ts"
