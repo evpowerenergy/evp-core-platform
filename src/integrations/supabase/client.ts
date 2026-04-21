@@ -5,8 +5,17 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from '@/config';
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
+//
+// In test/dev environments some unit tests import pure utils that transitively
+// import this file. Use safe placeholders when env vars are absent so tests can
+// run without real Supabase credentials.
+const FALLBACK_SUPABASE_URL = 'http://127.0.0.1:54321';
+const FALLBACK_SUPABASE_ANON_KEY = 'test-anon-key';
 
-export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
+const resolvedSupabaseUrl = SUPABASE_URL || FALLBACK_SUPABASE_URL;
+const resolvedSupabaseAnonKey = SUPABASE_ANON_KEY || FALLBACK_SUPABASE_ANON_KEY;
+
+export const supabase = createClient<Database>(resolvedSupabaseUrl, resolvedSupabaseAnonKey, {
   auth: {
     autoRefreshToken: true,
     persistSession: true,
