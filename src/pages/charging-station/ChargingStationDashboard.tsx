@@ -19,6 +19,9 @@ import {
   ComposedChart,
   Legend,
   Line,
+  Pie,
+  PieChart,
+  Cell,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -214,11 +217,19 @@ const tooltipLightStyle = {
   boxShadow: "0 10px 40px -10px rgba(15, 23, 42, 0.2)",
 };
 
+function getSegmentKeyByRate(rateBaht: number): "fleet" | "general" | null {
+  const EPS = 0.001;
+  if (Math.abs(rateBaht - 6.5) <= EPS) return "fleet";
+  if (Math.abs(rateBaht - 6.9) <= EPS) return "general";
+  return null;
+}
+
 export default function ChargingStationDashboard() {
   const { setMeta } = useChargingPageMeta();
   const [csvText, setCsvText] = useState("");
   const [fileName, setFileName] = useState<string | null>(null);
   const [includeFailed, setIncludeFailed] = useState(false);
+  const [compareBySegment, setCompareBySegment] = useState(true);
   const [importOpen, setImportOpen] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const didAutoCollapse = useRef(false);
@@ -238,6 +249,8 @@ export default function ChargingStationDashboard() {
     if (!csvText.trim()) return null;
     return parseChargingCsvFile(csvText, { includeFailedInMoneyAndEnergy: includeFailed });
   }, [csvText, includeFailed]);
+  const kpis = analytics?.kpis;
+  const rowCount = analytics?.sessions.length ?? 0;
 
   useEffect(() => {
     if (!csvText.trim()) {
@@ -267,12 +280,133 @@ export default function ChargingStationDashboard() {
     }
     return [...map.entries()]
       .map(([name, v]) => ({ name, ...v }))
-      .sort((a, b) => b.gross - a.gross)
-      .slice(0, 15);
+      .sort((a, b) => b.gross - a.gross);
   }, [analytics]);
 
-  const kpis = analytics?.kpis;
-  const rowCount = analytics?.sessions.length ?? 0;
+  const customerSegmentsByRate = useMemo(() => {
+    if (!analytics) return [];
+    const segments: Array<{
+      key: "fleet" | "general";
+      label: string;
+      rate: number;
+      sessions: number;
+      uniqueUsers: Set<string>;
+      kwh: number;
+      gross: number;
+      net: number;
+    }> = [
+      { key: "fleet", label: "Fleet", rate: 6.5, sessions: 0, uniqueUsers: new Set<string>(), kwh: 0, gross: 0, net: 0 },
+      {
+        key: "general",
+        label: "User ทั่วไป",
+        rate: 6.9,
+        sessions: 0,
+        uniqueUsers: new Set<string>(),
+        kwh: 0,
+        gross: 0,
+        net: 0,
+      },
+    ];
+    const EPS = 0.001;
+
+    for (const s of analytics.sessions) {
+      for (const seg of segments) {
+        if (Math.abs(s.rateBaht - seg.rate) > EPS) continue;
+        seg.sessions += 1;
+        seg.kwh += s.kwh;
+        seg.gross += s.grossBaht;
+        seg.net += s.netBaht;
+        const user = (s.userName || "").trim();
+        if (user) seg.uniqueUsers.add(user);
+      }
+    }
+
+    return segments.map((seg) => ({
+      key: seg.key,
+      label: seg.label,
+      rate: seg.rate,
+      sessions: seg.sessions,
+      users: seg.uniqueUsers.size,
+      kwh: seg.kwh,
+      gross: seg.gross,
+      net: seg.net,
+    }));
+  }, [analytics]);
+
+  const segmentedCharts = useMemo(() => {
+    if (!analytics) return null;
+    const hourly = Array.from({ length: 24 }, (_, hour) => ({
+      hour,
+      fleetSessions: 0,
+      generalSessions: 0,
+    }));
+    const dayOfWeek = analytics.dayOfWeek.map((d) => ({
+      dow: d.dow,
+      label: d.label,
+      fleetSessions: 0,
+      generalSessions: 0,
+    }));
+    const dailyMap = new Map<string, { fleetGross: number; generalGross: number; fleetNet: number; generalNet: number }>();
+    const monthlyMap = new Map<string, { fleetKwh: number; generalKwh: number }>();
+
+    for (const s of analytics.sessions) {
+      if (!includeFailed && !s.paymentSuccess) continue;
+      const seg = getSegmentKeyByRate(s.rateBaht);
+      if (!seg || !s.startAt) continue;
+
+      const hour = s.startAt.getHours();
+      if (seg === "fleet") hourly[hour].fleetSessions += 1;
+      if (seg === "general") hourly[hour].generalSessions += 1;
+
+      const monBasedDow = (s.startAt.getDay() + 6) % 7;
+      const dowRow = dayOfWeek[monBasedDow];
+      if (dowRow) {
+        if (seg === "fleet") dowRow.fleetSessions += 1;
+        if (seg === "general") dowRow.generalSessions += 1;
+      }
+
+      const dateKey = `${s.startAt.getFullYear()}-${String(s.startAt.getMonth() + 1).padStart(2, "0")}-${String(
+        s.startAt.getDate()
+      ).padStart(2, "0")}`;
+      const dailyRow = dailyMap.get(dateKey) ?? { fleetGross: 0, generalGross: 0, fleetNet: 0, generalNet: 0 };
+      if (seg === "fleet") {
+        dailyRow.fleetGross += s.grossBaht;
+        dailyRow.fleetNet += s.netBaht;
+      } else {
+        dailyRow.generalGross += s.grossBaht;
+        dailyRow.generalNet += s.netBaht;
+      }
+      dailyMap.set(dateKey, dailyRow);
+
+      const monthKey = `${s.startAt.getFullYear()}-${String(s.startAt.getMonth() + 1).padStart(2, "0")}`;
+      const monthRow = monthlyMap.get(monthKey) ?? { fleetKwh: 0, generalKwh: 0 };
+      if (seg === "fleet") monthRow.fleetKwh += s.kwh;
+      else monthRow.generalKwh += s.kwh;
+      monthlyMap.set(monthKey, monthRow);
+    }
+
+    const dailyRevenue = [...dailyMap.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([dateKey, v]) => ({ dateKey, ...v }));
+
+    const monthlyUtilization = [...monthlyMap.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([monthKey, v]) => {
+        const [ys, ms] = monthKey.split("-");
+        const y = Number(ys);
+        const m = Number(ms);
+        const daysInMonth = Number.isFinite(y) && Number.isFinite(m) ? new Date(y, m, 0).getDate() : 30;
+        const denom = (kpis?.capacityKw ?? 0) * 24 * daysInMonth;
+        return {
+          monthKey,
+          labelShort: formatMonthLabelThai(monthKey),
+          fleetUtilizationPct: denom > 0 ? (v.fleetKwh / denom) * 100 : 0,
+          generalUtilizationPct: denom > 0 ? (v.generalKwh / denom) * 100 : 0,
+        };
+      });
+
+    return { hourly, dayOfWeek, dailyRevenue, monthlyUtilization };
+  }, [analytics, includeFailed, kpis?.capacityKw]);
 
   useEffect(() => {
     if (!kpis) {
@@ -507,6 +641,14 @@ export default function ChargingStationDashboard() {
           </KpiSection>
 
           <Tabs defaultValue="overview" className="w-full">
+            <div className="mb-4 flex items-center justify-end">
+              <div className="flex items-center gap-2 rounded-full border border-white/10 bg-slate-950/50 px-3 py-1.5">
+                <Label htmlFor="compare-by-segment" className="cursor-pointer text-xs text-slate-400">
+                  เปรียบเทียบ Fleet vs User ทั่วไป
+                </Label>
+                <Switch id="compare-by-segment" checked={compareBySegment} onCheckedChange={setCompareBySegment} />
+              </div>
+            </div>
             <TabsList className="grid h-auto w-full max-w-3xl grid-cols-2 gap-1 rounded-2xl bg-slate-950/80 p-1.5 ring-1 ring-white/10 sm:grid-cols-4">
               {["overview", "customer", "usage", "revenue"].map((v, i) => (
                 <TabsTrigger
@@ -523,11 +665,23 @@ export default function ChargingStationDashboard() {
               <div className="grid gap-6 lg:grid-cols-2">
                 <ChartSurface title="ช่วงไหนคนมาชาร์จเยอะ" description="จำนวนครั้งชาร์จในแต่ละชั่วโมง (0–23 น.)">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={analytics.hourly} margin={{ top: 8, right: 8, left: -8, bottom: 0 }} {...chartAnim}>
+                    <BarChart
+                      data={compareBySegment ? (segmentedCharts?.hourly ?? []) : analytics.hourly}
+                      margin={{ top: 8, right: 8, left: -8, bottom: 0 }}
+                      {...chartAnim}
+                    >
                       <defs>
                         <linearGradient id="csms-hour-bar" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="0%" stopColor="#fbbf24" stopOpacity={0.95} />
                           <stop offset="100%" stopColor="#d97706" stopOpacity={0.85} />
+                        </linearGradient>
+                        <linearGradient id="csms-hour-fleet" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.95} />
+                          <stop offset="100%" stopColor="#6d28d9" stopOpacity={0.85} />
+                        </linearGradient>
+                        <linearGradient id="csms-hour-general" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#22d3ee" stopOpacity={0.95} />
+                          <stop offset="100%" stopColor="#0891b2" stopOpacity={0.85} />
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 6" {...gridSoft} vertical={false} />
@@ -541,14 +695,32 @@ export default function ChargingStationDashboard() {
                         formatter={(v: number) => [v.toLocaleString("th-TH"), "ครั้งชาร์จ"]}
                         labelFormatter={(h) => `ชั่วโมง ${h}`}
                       />
-                      <Bar dataKey="sessions" fill="url(#csms-hour-bar)" name="ครั้งชาร์จ" radius={[8, 8, 0, 0]} maxBarSize={48} />
+                      {compareBySegment ? (
+                        <>
+                          <Legend wrapperStyle={legendReadable} iconType="circle" iconSize={8} />
+                          <Bar dataKey="fleetSessions" fill="url(#csms-hour-fleet)" name="Fleet" radius={[8, 8, 0, 0]} maxBarSize={30} />
+                          <Bar
+                            dataKey="generalSessions"
+                            fill="url(#csms-hour-general)"
+                            name="User ทั่วไป"
+                            radius={[8, 8, 0, 0]}
+                            maxBarSize={30}
+                          />
+                        </>
+                      ) : (
+                        <Bar dataKey="sessions" fill="url(#csms-hour-bar)" name="ครั้งชาร์จ" radius={[8, 8, 0, 0]} maxBarSize={48} />
+                      )}
                     </BarChart>
                   </ResponsiveContainer>
                 </ChartSurface>
 
                 <ChartSurface title="รายได้รายวัน (ก่อนหัก)" description="แนวโน้มยอดก่อนหักแยกตามวัน">
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={analytics.dailyRevenue} margin={{ top: 12, right: 8, left: 0, bottom: 4 }} {...chartAnim}>
+                    <ComposedChart
+                      data={compareBySegment ? (segmentedCharts?.dailyRevenue ?? []) : analytics.dailyRevenue}
+                      margin={{ top: 12, right: 8, left: 0, bottom: 4 }}
+                      {...chartAnim}
+                    >
                       <defs>
                         <linearGradient id="csms-daily-gross-area" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="0%" stopColor="#ea580c" stopOpacity={0.35} />
@@ -573,15 +745,25 @@ export default function ChargingStationDashboard() {
                         formatter={(v: number) => [`฿${formatBaht(v)}`, "ก่อนหัก"]}
                         labelFormatter={(d) => `วันที่ ${d}`}
                       />
-                      <Area type="monotone" dataKey="gross" stroke="none" fill="url(#csms-daily-gross-area)" />
-                      <Line
-                        type="monotone"
-                        dataKey="gross"
-                        stroke="#c2410c"
-                        strokeWidth={2.5}
-                        dot={false}
-                        activeDot={{ r: 5, fill: "#ea580c", stroke: "#fff", strokeWidth: 2 }}
-                      />
+                      {compareBySegment ? (
+                        <>
+                          <Legend wrapperStyle={legendReadable} iconType="circle" iconSize={8} />
+                          <Line type="monotone" dataKey="fleetGross" stroke="#6d28d9" strokeWidth={2.5} dot={false} name="Fleet" />
+                          <Line type="monotone" dataKey="generalGross" stroke="#0891b2" strokeWidth={2.5} dot={false} name="User ทั่วไป" />
+                        </>
+                      ) : (
+                        <>
+                          <Area type="monotone" dataKey="gross" stroke="none" fill="url(#csms-daily-gross-area)" />
+                          <Line
+                            type="monotone"
+                            dataKey="gross"
+                            stroke="#c2410c"
+                            strokeWidth={2.5}
+                            dot={false}
+                            activeDot={{ r: 5, fill: "#ea580c", stroke: "#fff", strokeWidth: 2 }}
+                          />
+                        </>
+                      )}
                     </ComposedChart>
                   </ResponsiveContainer>
                 </ChartSurface>
@@ -598,7 +780,11 @@ export default function ChargingStationDashboard() {
                   </p>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={analytics.monthlyUtilization} margin={{ top: 12, right: 12, left: 0, bottom: 4 }} {...chartAnim}>
+                    <ComposedChart
+                      data={compareBySegment ? (segmentedCharts?.monthlyUtilization ?? []) : analytics.monthlyUtilization}
+                      margin={{ top: 12, right: 12, left: 0, bottom: 4 }}
+                      {...chartAnim}
+                    >
                       <defs>
                         <linearGradient id="csms-util-area" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="0%" stopColor="#7c3aed" stopOpacity={0.35} />
@@ -610,9 +796,9 @@ export default function ChargingStationDashboard() {
                         dataKey="labelShort"
                         tick={tickAxisSm}
                         interval={0}
-                        angle={analytics.monthlyUtilization.length > 8 ? -32 : 0}
-                        textAnchor={analytics.monthlyUtilization.length > 8 ? "end" : "middle"}
-                        height={analytics.monthlyUtilization.length > 8 ? 56 : 32}
+                        angle={(compareBySegment ? segmentedCharts?.monthlyUtilization.length : analytics.monthlyUtilization.length) > 8 ? -32 : 0}
+                        textAnchor={(compareBySegment ? segmentedCharts?.monthlyUtilization.length : analytics.monthlyUtilization.length) > 8 ? "end" : "middle"}
+                        height={(compareBySegment ? segmentedCharts?.monthlyUtilization.length : analytics.monthlyUtilization.length) > 8 ? 56 : 32}
                         axisLine={{ stroke: "#94a3b8" }}
                         tickLine={{ stroke: "#94a3b8" }}
                       />
@@ -627,27 +813,56 @@ export default function ChargingStationDashboard() {
                       <Tooltip
                         content={({ active, payload }) => {
                           if (!active || !payload?.length) return null;
-                          const row = payload[0].payload as MonthlyUtilizationRow;
+                          const row = payload[0].payload as MonthlyUtilizationRow & {
+                            fleetUtilizationPct?: number;
+                            generalUtilizationPct?: number;
+                          };
                           return (
                             <div className="rounded-xl border border-violet-200/90 bg-white px-3 py-2 text-xs shadow-xl" style={tooltipLightStyle}>
                               <p className="font-semibold text-slate-900">{formatMonthLabelThai(row.monthKey)}</p>
-                              <p className="text-violet-700">Utilization Rate: {row.utilizationPct.toFixed(2)}%</p>
-                              <p className="text-slate-600">
-                                {row.kwh.toLocaleString("th-TH", { maximumFractionDigits: 3 })} kWh · {row.daysInMonth} วัน
-                              </p>
+                              {compareBySegment ? (
+                                <>
+                                  <p className="text-violet-700">Fleet: {(row.fleetUtilizationPct ?? 0).toFixed(2)}%</p>
+                                  <p className="text-cyan-700">User ทั่วไป: {(row.generalUtilizationPct ?? 0).toFixed(2)}%</p>
+                                </>
+                              ) : (
+                                <>
+                                  <p className="text-violet-700">Utilization Rate: {row.utilizationPct.toFixed(2)}%</p>
+                                  <p className="text-slate-600">
+                                    {row.kwh.toLocaleString("th-TH", { maximumFractionDigits: 3 })} kWh · {row.daysInMonth} วัน
+                                  </p>
+                                </>
+                              )}
                             </div>
                           );
                         }}
                       />
-                      <Area type="monotone" dataKey="utilizationPct" stroke="none" fill="url(#csms-util-area)" />
-                      <Line
-                        type="monotone"
-                        dataKey="utilizationPct"
-                        stroke="#6d28d9"
-                        strokeWidth={2.5}
-                        dot={{ r: 3, fill: "#7c3aed", stroke: "#fff", strokeWidth: 2 }}
-                        activeDot={{ r: 6 }}
-                      />
+                      {compareBySegment ? (
+                        <>
+                          <Legend wrapperStyle={legendReadable} iconType="circle" iconSize={8} />
+                          <Line type="monotone" dataKey="fleetUtilizationPct" stroke="#6d28d9" strokeWidth={2.5} dot={false} name="Fleet" />
+                          <Line
+                            type="monotone"
+                            dataKey="generalUtilizationPct"
+                            stroke="#0891b2"
+                            strokeWidth={2.5}
+                            dot={false}
+                            name="User ทั่วไป"
+                          />
+                        </>
+                      ) : (
+                        <>
+                          <Area type="monotone" dataKey="utilizationPct" stroke="none" fill="url(#csms-util-area)" />
+                          <Line
+                            type="monotone"
+                            dataKey="utilizationPct"
+                            stroke="#6d28d9"
+                            strokeWidth={2.5}
+                            dot={{ r: 3, fill: "#7c3aed", stroke: "#fff", strokeWidth: 2 }}
+                            activeDot={{ r: 6 }}
+                          />
+                        </>
+                      )}
                     </ComposedChart>
                   </ResponsiveContainer>
                 )}
@@ -686,6 +901,148 @@ export default function ChargingStationDashboard() {
                 </KpiCard>
               </div>
               </KpiSection>
+
+              <KpiSection
+                title="เปรียบเทียบกลุ่มลูกค้า (อิงเรทราคา)"
+                hint="กำหนดจากเรทราคาในไฟล์: 6.5 = Fleet และ 6.9 = User ทั่วไป"
+              >
+                <div className="grid gap-4 md:grid-cols-2">
+                  {customerSegmentsByRate.map((seg) => (
+                    <KpiCard
+                      key={seg.key}
+                      title={`${seg.label} · เรท ${seg.rate.toFixed(1)} ฿/kWh`}
+                      icon={Users}
+                      accent={seg.key === "fleet" ? "violet" : "cyan"}
+                      foot={`ลูกค้าไม่ซ้ำ ${seg.users.toLocaleString("th-TH")} คน`}
+                    >
+                      {seg.sessions.toLocaleString("th-TH")} ครั้งชาร์จ
+                    </KpiCard>
+                  ))}
+                </div>
+
+                <div className="grid gap-4 xl:grid-cols-3">
+                  <ChartSurface
+                    title="จำนวนครั้งชาร์จแยกตามกลุ่มลูกค้า"
+                    description="นับจากเรทราคาในแต่ละรายการชาร์จ"
+                    chartHeightClass="h-[300px]"
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={customerSegmentsByRate} margin={{ top: 8, right: 8, left: -8, bottom: 0 }} {...chartAnim}>
+                        <defs>
+                          <linearGradient id="csms-segment-sessions" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#7c3aed" stopOpacity={0.9} />
+                            <stop offset="100%" stopColor="#0891b2" stopOpacity={0.85} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 6" {...gridSoft} vertical={false} />
+                        <XAxis dataKey="label" tick={tickAxisSm} axisLine={{ stroke: "#94a3b8" }} tickLine={{ stroke: "#94a3b8" }} />
+                        <YAxis tick={tickAxisSm} axisLine={{ stroke: "#94a3b8" }} tickLine={{ stroke: "#94a3b8" }} width={40} />
+                        <Tooltip
+                          contentStyle={tooltipLightStyle}
+                          labelStyle={tooltipLabelStyle}
+                          itemStyle={tooltipItemStyle}
+                          formatter={(v: number) => [v.toLocaleString("th-TH"), "ครั้งชาร์จ"]}
+                        />
+                        <Bar
+                          dataKey="sessions"
+                          fill="url(#csms-segment-sessions)"
+                          name="ครั้งชาร์จ"
+                          radius={[8, 8, 0, 0]}
+                          maxBarSize={60}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </ChartSurface>
+
+                  <ChartSurface title="สัดส่วนจำนวนผู้ใช้ตามกลุ่ม" description="Pie chart เปรียบเทียบผู้ใช้ไม่ซ้ำ" chartHeightClass="h-[300px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Tooltip
+                          contentStyle={tooltipLightStyle}
+                          labelStyle={tooltipLabelStyle}
+                          itemStyle={tooltipItemStyle}
+                          formatter={(v: number) => [v.toLocaleString("th-TH"), "ผู้ใช้"]}
+                        />
+                        <Legend wrapperStyle={legendReadable} iconType="circle" iconSize={8} />
+                        <Pie
+                          data={customerSegmentsByRate}
+                          dataKey="users"
+                          nameKey="label"
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={58}
+                          outerRadius={96}
+                          paddingAngle={3}
+                          label={({ percent }) => `${((percent ?? 0) * 100).toFixed(1)}%`}
+                        >
+                          {customerSegmentsByRate.map((entry) => (
+                            <Cell key={`segment-user-${entry.key}`} fill={entry.key === "fleet" ? "#7c3aed" : "#0891b2"} />
+                          ))}
+                        </Pie>
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </ChartSurface>
+
+                  <ChartSurface title="รายได้เปรียบเทียบตามกลุ่ม" description="รายได้ก่อนหัก (Gross) ของแต่ละกลุ่ม" chartHeightClass="h-[300px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={customerSegmentsByRate} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} {...chartAnim}>
+                        <defs>
+                          <linearGradient id="csms-segment-revenue" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.95} />
+                            <stop offset="100%" stopColor="#ea580c" stopOpacity={0.85} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 6" {...gridSoft} vertical={false} />
+                        <XAxis dataKey="label" tick={tickAxisSm} axisLine={{ stroke: "#94a3b8" }} tickLine={{ stroke: "#94a3b8" }} />
+                        <YAxis tick={tickAxisSm} axisLine={{ stroke: "#94a3b8" }} tickLine={{ stroke: "#94a3b8" }} width={56} />
+                        <Tooltip
+                          contentStyle={tooltipLightStyle}
+                          labelStyle={tooltipLabelStyle}
+                          itemStyle={tooltipItemStyle}
+                          formatter={(v: number) => [`฿${formatBaht(v)}`, "รายได้ก่อนหัก"]}
+                        />
+                        <Bar dataKey="gross" fill="url(#csms-segment-revenue)" name="รายได้ก่อนหัก" radius={[8, 8, 0, 0]} maxBarSize={60} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </ChartSurface>
+                </div>
+
+                <Card className="border-white/10 bg-white/[0.04] shadow-xl shadow-black/20 backdrop-blur-sm">
+                  <CardHeader>
+                    <CardTitle className="text-base text-white">สรุปตัวเลขแต่ละกลุ่ม</CardTitle>
+                    <CardDescription className="text-slate-500">
+                      แยกตามเรทราคาในคอลัมน์เรท (฿)
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="overflow-x-auto rounded-2xl border border-white/5 bg-slate-950/30 p-0">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="border-white/10 hover:bg-transparent">
+                          <TableHead className="text-slate-400">กลุ่ม</TableHead>
+                          <TableHead className="text-right text-slate-400">เรท (฿)</TableHead>
+                          <TableHead className="text-right text-slate-400">ลูกค้าไม่ซ้ำ</TableHead>
+                          <TableHead className="text-right text-slate-400">ครั้งชาร์จ</TableHead>
+                          <TableHead className="text-right text-slate-400">ไฟ (kWh)</TableHead>
+                          <TableHead className="text-right text-slate-400">ยอดก่อนหัก</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {customerSegmentsByRate.map((seg) => (
+                          <TableRow key={`segment-row-${seg.key}`} className="border-white/5 hover:bg-white/[0.04]">
+                            <TableCell className="font-medium text-slate-200">{seg.label}</TableCell>
+                            <TableCell className="text-right tabular-nums text-slate-300">{seg.rate.toFixed(1)}</TableCell>
+                            <TableCell className="text-right tabular-nums text-slate-300">{seg.users.toLocaleString("th-TH")}</TableCell>
+                            <TableCell className="text-right tabular-nums text-slate-300">{seg.sessions.toLocaleString("th-TH")}</TableCell>
+                            <TableCell className="text-right tabular-nums text-slate-300">{seg.kwh.toFixed(3)}</TableCell>
+                            <TableCell className="text-right tabular-nums text-amber-200/90">฿{formatBaht(seg.gross)}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              </KpiSection>
+
               <Card className="border-white/10 bg-white/[0.04] shadow-xl shadow-black/20 backdrop-blur-sm">
                 <CardHeader>
                   <CardTitle className="text-base text-white">ลูกค้าที่ทำรายได้สูงสุด</CardTitle>
@@ -723,7 +1080,11 @@ export default function ChargingStationDashboard() {
             <TabsContent value="usage" className="mt-6 space-y-6 focus-visible:outline-none">
               <ChartSurface title="วันไหนคึกคัก" description="จันทร์ถึงอาทิตย์ — ครั้งชาร์จและหน่วยไฟ">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={analytics.dayOfWeek} margin={{ top: 8, right: 8, left: -8, bottom: 0 }} {...chartAnim}>
+                  <BarChart
+                    data={compareBySegment ? (segmentedCharts?.dayOfWeek ?? []) : analytics.dayOfWeek}
+                    margin={{ top: 8, right: 8, left: -8, bottom: 0 }}
+                    {...chartAnim}
+                  >
                     <defs>
                       <linearGradient id="csms-dow-sess" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor="#fb923c" />
@@ -751,8 +1112,24 @@ export default function ChargingStationDashboard() {
                       itemStyle={tooltipItemStyle}
                     />
                     <Legend wrapperStyle={legendReadable} iconType="circle" iconSize={8} />
-                    <Bar yAxisId="left" dataKey="sessions" fill="url(#csms-dow-sess)" name="ครั้งชาร์จ" radius={[6, 6, 0, 0]} maxBarSize={28} />
-                    <Bar yAxisId="right" dataKey="kwh" fill="url(#csms-dow-kwh)" name="หน่วยไฟ (kWh)" radius={[6, 6, 0, 0]} maxBarSize={28} />
+                    {compareBySegment ? (
+                      <>
+                        <Bar yAxisId="left" dataKey="fleetSessions" fill="#7c3aed" name="Fleet (ครั้งชาร์จ)" radius={[6, 6, 0, 0]} maxBarSize={28} />
+                        <Bar
+                          yAxisId="left"
+                          dataKey="generalSessions"
+                          fill="#0891b2"
+                          name="User ทั่วไป (ครั้งชาร์จ)"
+                          radius={[6, 6, 0, 0]}
+                          maxBarSize={28}
+                        />
+                      </>
+                    ) : (
+                      <>
+                        <Bar yAxisId="left" dataKey="sessions" fill="url(#csms-dow-sess)" name="ครั้งชาร์จ" radius={[6, 6, 0, 0]} maxBarSize={28} />
+                        <Bar yAxisId="right" dataKey="kwh" fill="url(#csms-dow-kwh)" name="หน่วยไฟ (kWh)" radius={[6, 6, 0, 0]} maxBarSize={28} />
+                      </>
+                    )}
                   </BarChart>
                 </ResponsiveContainer>
               </ChartSurface>
@@ -806,7 +1183,11 @@ export default function ChargingStationDashboard() {
                 description="เส้นส้ม = ก่อนหัก · เส้นม่วง = หลังหัก · พื้นที่ใต้เส้นช่วยดูระดับยอด"
               >
                 <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={analytics.dailyRevenue} margin={{ top: 12, right: 8, left: 0, bottom: 4 }} {...chartAnim}>
+                  <ComposedChart
+                    data={compareBySegment ? (segmentedCharts?.dailyRevenue ?? []) : analytics.dailyRevenue}
+                    margin={{ top: 12, right: 8, left: 0, bottom: 4 }}
+                    {...chartAnim}
+                  >
                     <defs>
                       <linearGradient id="csms-rev-gross" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.3} />
@@ -836,26 +1217,63 @@ export default function ChargingStationDashboard() {
                       labelFormatter={(d) => `วันที่ ${d}`}
                     />
                     <Legend wrapperStyle={legendReadable} iconType="circle" iconSize={8} />
-                    <Area type="monotone" dataKey="gross" stroke="none" fill="url(#csms-rev-gross)" />
-                    <Area type="monotone" dataKey="net" stroke="none" fill="url(#csms-rev-net)" />
-                    <Line
-                      type="monotone"
-                      dataKey="gross"
-                      stroke="#d97706"
-                      strokeWidth={2.5}
-                      dot={false}
-                      name="ก่อนหัก"
-                      activeDot={{ r: 5 }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="net"
-                      stroke="#6d28d9"
-                      strokeWidth={2.5}
-                      dot={false}
-                      name="หลังหัก"
-                      activeDot={{ r: 5 }}
-                    />
+                    {compareBySegment ? (
+                      <>
+                        <Line type="monotone" dataKey="fleetGross" stroke="#6d28d9" strokeWidth={2.4} dot={false} name="Fleet ก่อนหัก" activeDot={{ r: 4 }} />
+                        <Line
+                          type="monotone"
+                          dataKey="fleetNet"
+                          stroke="#a78bfa"
+                          strokeWidth={2.1}
+                          strokeDasharray="5 4"
+                          dot={false}
+                          name="Fleet หลังหัก"
+                          activeDot={{ r: 4 }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="generalGross"
+                          stroke="#0891b2"
+                          strokeWidth={2.4}
+                          dot={false}
+                          name="User ทั่วไป ก่อนหัก"
+                          activeDot={{ r: 4 }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="generalNet"
+                          stroke="#22d3ee"
+                          strokeWidth={2.1}
+                          strokeDasharray="5 4"
+                          dot={false}
+                          name="User ทั่วไป หลังหัก"
+                          activeDot={{ r: 4 }}
+                        />
+                      </>
+                    ) : (
+                      <>
+                        <Area type="monotone" dataKey="gross" stroke="none" fill="url(#csms-rev-gross)" />
+                        <Area type="monotone" dataKey="net" stroke="none" fill="url(#csms-rev-net)" />
+                        <Line
+                          type="monotone"
+                          dataKey="gross"
+                          stroke="#d97706"
+                          strokeWidth={2.5}
+                          dot={false}
+                          name="ก่อนหัก"
+                          activeDot={{ r: 5 }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="net"
+                          stroke="#6d28d9"
+                          strokeWidth={2.5}
+                          dot={false}
+                          name="หลังหัก"
+                          activeDot={{ r: 5 }}
+                        />
+                      </>
+                    )}
                   </ComposedChart>
                 </ResponsiveContainer>
               </ChartSurface>
