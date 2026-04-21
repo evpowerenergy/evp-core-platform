@@ -1,0 +1,2205 @@
+import React, { useState, useEffect, lazy, Suspense, useMemo } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { supabase } from "@/integrations/supabase/client";
+
+// Lazy load ReactECharts to reduce initial bundle size
+const ReactECharts = lazy(() => import('echarts-for-react'));
+
+// Preload critical resources
+if (typeof window !== 'undefined') {
+  // Preload ReactECharts
+  import('echarts-for-react').catch(() => {});
+  
+  // Preload critical CSS
+  const link = document.createElement('link');
+  link.rel = 'preload';
+  link.href = '/src/index.css';
+  link.as = 'style';
+  document.head.appendChild(link);
+}
+import { useFilteredSalesTeamData } from "@/hooks/useAppDataAPI";
+import { Package, TrendingUp, Target, Users, Calendar, MapPin, Zap, FileText, UserX, Phone } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import SaleChanceChart from "@/components/dashboard/SaleChanceChart";
+import { useSaleChanceStats } from "@/hooks/useSaleChanceStats";
+import { DateRange } from "react-day-picker";
+import { DateRangePicker } from "@/components/ui/date-range-picker";
+import MetricLeadsDialog from "@/components/reports/MetricLeadsDialog";
+import { getSalesDataInPeriod, getSalesDataByCategory, getQuotationDataInPeriod, getOpportunityDataInPeriod } from "@/utils/salesUtils";
+import { useQuery } from '@tanstack/react-query';
+
+interface PackageDashboardData {
+  totalProjects: number;
+  totalActiveLeads: number;  // เพิ่มตัวแปรนี้
+  activeLeadsCount: number;  // เพิ่มจำนวนลีดที่ยังไม่ปิดการขาย
+  opportunityValue: number;
+  winValue: number;
+  winRate: number;
+  newCustomers: number;
+  existingCustomers: number;
+  followUpCount: number;
+  statusData: Array<{ name: string; value: number; color: string }>;
+  sourceData: Array<{ name: string; value: number; color: string }>;
+  regionData: Array<{ name: string; value: number }>;
+  hotnessData: Array<{ name: string; value: number }>;
+  paymentMethodData: Array<{ name: string; value: number }>;
+  appointmentRate: number;
+  quotationRate: number;
+  contactableRate: number;
+  uncontactableRate: number;
+  averageHotness: string;
+}
+
+const PackageDashboard = () => {
+  // Get sales team data for package (including manager_sale)
+  const { data: salesTeamData, loading: salesTeamLoading } = useFilteredSalesTeamData('sale_package');
+  const { salesTeam = [] } = salesTeamData || {};
+  
+  const [salesFilter, setSalesFilter] = useState('all');
+  const [dateRangeFilter, setDateRangeFilter] = useState<DateRange | undefined>({ 
+    from: new Date(), 
+    to: new Date() 
+  });
+  const [dashboardData, setDashboardData] = useState<PackageDashboardData>({
+    totalProjects: 0,
+    opportunityValue: 0,
+    winValue: 0,
+    winRate: 0,
+    newCustomers: 0,
+    existingCustomers: 0,
+    followUpCount: 0,
+    statusData: [],
+    sourceData: [],
+    regionData: [],
+    hotnessData: [],
+    paymentMethodData: [],
+    appointmentRate: 0,
+    quotationRate: 0,
+    contactableRate: 0,
+    uncontactableRate: 0,
+    averageHotness: 'ร้อนปานกลาง',
+    totalActiveLeads: 0,
+    activeLeadsCount: 0,
+  });
+  const [loading, setLoading] = useState(true);
+
+  // Modal state for metric details
+  const [metricModalState, setMetricModalState] = useState({
+    isOpen: false,
+    title: '',
+    leads: [] as any[],
+    metricType: 'quotation' as 'quotation' | 'contactable' | 'uncontactable' | 'appointment'
+  });
+
+  // Define fetchDashboardData function first
+  const fetchDashboardData = async (): Promise<PackageDashboardData> => {
+    try {
+      // Use proper timezone handling for date range
+      let startDate: string, endDate: string;
+      
+      if (dateRangeFilter && dateRangeFilter.from) {
+        const fromDate = dateRangeFilter.from;
+        const toDate = dateRangeFilter.to || dateRangeFilter.from;
+        
+        // Use Intl.DateTimeFormat with Thailand timezone to get correct dates
+        const formatter = new Intl.DateTimeFormat('sv-SE', {
+          timeZone: 'Asia/Bangkok',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        });
+        
+        // Format start date - Start from 00:00:00 Thai time
+        const startDateString = formatter.format(fromDate);
+        startDate = startDateString + 'T00:00:00.000';
+        
+        // Format end date - End at 23:59:59 Thai time
+        const endDateString = formatter.format(toDate);
+        endDate = endDateString + 'T23:59:59.999';
+      } else {
+        // No date range selected - show all data (no date filter)
+        startDate = '';
+        endDate = '';
+      }
+
+      // ✅ แก้ไข N+1 Queries: ใช้ Promise.all สำหรับ parallel queries
+      const salesFilterParam = salesFilter !== 'all' ? salesFilter : undefined;
+      
+      // สร้าง queries ทั้งหมดก่อน
+      let newLeadsCountQuery = supabase
+        .from('leads')
+        .select('*', { count: 'exact', head: true })
+        .eq('category', 'Package')
+        .eq('is_archived', false)
+        .not('sale_owner_id', 'is', null)
+        .not('tel', 'is', null)
+        .neq('tel', '');
+
+      let activityLeadsQuery = supabase
+        .from('leads')
+        .select('id, full_name, status, platform, region, created_at_thai, sale_owner_id, category, is_archived, tel, line_id')
+        .eq('category', 'Package')
+        .eq('is_archived', false)
+        .not('sale_owner_id', 'is', null);
+
+      // Apply date filters
+      if (startDate && endDate) {
+        newLeadsCountQuery = newLeadsCountQuery
+          .gte('assigned_at_thai', startDate)
+          .lte('assigned_at_thai', endDate);
+        activityLeadsQuery = activityLeadsQuery
+          .gte('updated_at_thai', startDate)
+          .lte('updated_at_thai', endDate);
+      }
+
+      // Apply sales filters
+      if (salesFilter !== 'all') {
+        newLeadsCountQuery = newLeadsCountQuery.eq('sale_owner_id', parseInt(salesFilter));
+        activityLeadsQuery = activityLeadsQuery.eq('sale_owner_id', parseInt(salesFilter));
+      }
+
+      // ✅ ดึงข้อมูลทั้งหมดพร้อมกัน (Parallel Queries)
+      const [
+        newLeadsCountResult,
+        activityLeadsResult,
+        packageSalesData,
+        quotationData,
+        opportunityData
+      ] = await Promise.all([
+        newLeadsCountQuery,
+        activityLeadsQuery,
+        // ดึงข้อมูลยอดขาย
+        startDate && endDate ? getSalesDataByCategory(startDate, endDate, 'Package', salesFilterParam) : Promise.resolve({ quotations: [], salesLogs: [] }),
+        // ดึงข้อมูลการออก QT
+        getQuotationDataInPeriod(startDate || new Date().toISOString(), endDate || new Date().toISOString(), 'Package', salesFilterParam),
+        // ดึงข้อมูลโอกาสการขาย
+        getOpportunityDataInPeriod(startDate || new Date().toISOString(), endDate || new Date().toISOString(), 'Package', salesFilterParam)
+      ]);
+
+      const { count: totalProjects } = newLeadsCountResult;
+      const { data: activityLeads } = activityLeadsResult;
+
+      if (totalProjects === null || !activityLeads) return dashboardData;
+
+      // ใช้ activityLeads สำหรับการคำนวณเมตริกอื่นๆ
+      const validActivityLeads = activityLeads.filter(lead => lead.tel && lead.tel.trim() !== '');
+      const wonLeads = validActivityLeads.filter(lead => lead.status === 'ปิดการขาย');
+      
+      // ✅ ใช้ข้อมูลที่ดึงมาแล้วจาก Promise.all
+      const allQuotations = packageSalesData.quotations;
+      const productivityLogsData = packageSalesData.salesLogs;
+      
+      // กำหนดค่าจาก opportunityData
+      const opportunityValue = opportunityData.totalOpportunityValue;
+      
+      // Win value should come from closed sales quotations (leads with status "ปิดการขาย")
+      const winValue = allQuotations.reduce((sum, q) => sum + (q.total_amount || 0), 0);
+      
+      // Calculate win rate based on actual closed sales vs total leads
+      const totalLeadsCount = validActivityLeads.length;
+      const closedSalesCount = productivityLogsData?.length || 0;  // ✅ ใช้ข้อมูลจาก productivity logs
+      const winRate = totalLeadsCount > 0 ? (closedSalesCount / totalLeadsCount) * 100 : 0;
+      
+      // คำนวณจำนวนลีดที่ยังไม่ปิดการขาย (สำหรับ Card โอกาส)
+      const activeLeadsCount = validActivityLeads.filter(lead => 
+        lead.status !== 'ปิดการขาย' && lead.status !== 'ยังปิดการขายไม่สำเร็จ'
+      ).length;
+      
+      // Status distribution
+      const statusCount = activityLeads.reduce((acc, lead) => {
+        acc[lead.status || 'ไม่ระบุ'] = (acc[lead.status || 'ไม่ระบุ'] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      const statusData = Object.entries(statusCount).map(([status, count], index) => ({
+        name: status,
+        value: count,
+        color: ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6'][index % 5]
+      }));
+
+      const sourceCount = activityLeads.reduce((acc, lead) => {
+        acc[lead.platform || 'ไม่ระบุ'] = (acc[lead.platform || 'ไม่ระบุ'] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      const sourceData = Object.entries(sourceCount).map(([source, count], index) => ({
+        name: source,
+        value: count,
+        color: ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#F97316'][index % 6]
+      }));
+
+      const regionCount = activityLeads.reduce((acc, lead) => {
+        acc[lead.region || 'ไม่ระบุ'] = (acc[lead.region || 'ไม่ระบุ'] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      const regionData = Object.entries(regionCount).map(([region, count]) => ({
+        name: region,
+        value: count
+      }));
+
+      // Get real hotness data from productivity logs - CORRECTED LOGIC
+      // Filter productivity logs directly by date instead of filtering leads first
+      let hotnessQuery = supabase
+        .from('lead_productivity_logs')
+        .select(`
+          hotness,
+          lead_id,
+          created_at_thai,
+          leads!inner(
+            id,
+            category,
+            sale_owner_id
+          )
+        `)
+        .eq('leads.category', 'Package')
+        .eq('leads.is_archived', false)
+        .not('leads.sale_owner_id', 'is', null) // Only leads with owners
+        .not('hotness', 'is', null)
+        .order('created_at_thai', { ascending: false });
+
+      // Only apply date filter if dates are selected
+      if (startDate && endDate) {
+        hotnessQuery = hotnessQuery
+          .gte('created_at_thai', startDate)  // ✅ Filter by productivity log date
+          .lte('created_at_thai', endDate);
+      }
+
+      // Apply sales filter after all other filters
+      if (salesFilter !== 'all') {
+        hotnessQuery = hotnessQuery.eq('leads.sale_owner_id', parseInt(salesFilter));
+      }
+
+      const { data: hotnessLogs, error: hotnessError } = await hotnessQuery;
+      
+      let latestHotnessLogs = new Map();
+      if (hotnessLogs && hotnessLogs.length > 0) {
+        // Use only the latest log for each lead
+        hotnessLogs.forEach(log => {
+          if (!latestHotnessLogs.has(log.lead_id)) {
+            latestHotnessLogs.set(log.lead_id, log);
+          }
+        });
+      }
+
+      const hotnessGroups = Array.from(latestHotnessLogs.values()).reduce((acc, log) => {
+        const hotness = log.hotness || 0;
+        if (hotness >= 8) acc.hot += 1;
+        else if (hotness >= 5) acc.warm += 1;
+        else acc.cold += 1;
+        return acc;
+      }, { hot: 0, warm: 0, cold: 0 });
+
+      const hotnessData = [
+        { name: 'น่าสนใจมาก\n(8-10)', value: hotnessGroups.hot || 0 },
+        { name: 'เฉยๆ\n(5-7)', value: hotnessGroups.warm || 0 },
+        { name: 'ไม่น่าสนใจ\n(1-4)', value: hotnessGroups.cold || 0 },
+      ];
+
+      // Get real payment method data from quotations - CORRECTED LOGIC
+      // Use quotations that come from productivity logs within date range
+      const paymentMethodCount = quotationData.quotations.reduce((acc, q) => {
+        const method = q.payment_method || 'ไม่ระบุ';
+        acc[method] = (acc[method] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      const paymentMethodData = Object.entries(paymentMethodCount).map(([name, value]) => ({
+        name,
+        value: value as number
+      }));
+
+      // Get customer group data from productivity logs - CORRECTED LOGIC
+      // Use 2-step query to avoid foreign key filter issues
+      let customerGroupQuery;
+      
+      if (startDate && endDate) {
+        // Step 1: Get leads with updated_at_thai in date range
+        const { data: leadsInDateRange } = await supabase
+          .from('leads')
+          .select('id, sale_owner_id')
+          .eq('category', 'Package')
+          .eq('is_archived', false)
+          .not('sale_owner_id', 'is', null)
+          .gte('updated_at_thai', startDate)
+          .lte('updated_at_thai', endDate);
+
+        let filteredLeads = leadsInDateRange || [];
+        if (salesFilter !== 'all') {
+          filteredLeads = filteredLeads.filter(lead => lead.sale_owner_id === parseInt(salesFilter));
+        }
+
+        const leadIds = filteredLeads.map(lead => lead.id);
+
+        // Step 2: Get productivity logs for these leads
+        if (leadIds.length > 0) {
+          customerGroupQuery = supabase
+            .from('lead_productivity_logs')
+            .select(`
+              lead_group,
+              lead_id,
+              leads!inner(
+                id,
+                category,
+                sale_owner_id
+              )
+            `)
+            .in('lead_id', leadIds)
+            .not('lead_group', 'is', null)
+            .order('lead_id', { ascending: false });
+        } else {
+          // If no leads found, create an empty query to avoid undefined error
+          customerGroupQuery = supabase
+            .from('lead_productivity_logs')
+            .select(`
+              lead_group, 
+              lead_id,
+              leads!inner(
+                id,
+                category,
+                sale_owner_id
+              )
+            `)
+            .eq('lead_id', -1); // This will return no results
+        }
+      } else {
+        // No date filter - get all leads with customer groups
+        customerGroupQuery = supabase
+          .from('lead_productivity_logs')
+          .select(`
+            lead_group,
+            lead_id,
+            leads!inner(
+              id,
+              category,
+              sale_owner_id
+            )
+          `)
+          .eq('leads.category', 'Package')
+          .eq('leads.is_archived', false)
+          .not('leads.sale_owner_id', 'is', null)
+          .not('lead_group', 'is', null)
+          .order('lead_id', { ascending: false });
+      }
+
+      // Apply sales filter after all other filters
+      if (salesFilter !== 'all' && customerGroupQuery) {
+        customerGroupQuery = customerGroupQuery.eq('leads.sale_owner_id', parseInt(salesFilter));
+      }
+
+      // Ensure customerGroupQuery is defined before executing
+      let customerGroupLogs = [];
+      let customerGroupError = null;
+      
+      if (!customerGroupQuery) {
+        console.warn('customerGroupQuery is undefined, skipping customer group data fetch');
+      } else {
+        const result = await customerGroupQuery;
+        customerGroupLogs = result.data || [];
+        customerGroupError = result.error;
+      }
+      
+      // Check for errors
+      if (customerGroupError) {
+        console.error('Error fetching customer group data:', customerGroupError);
+      }
+
+      // Use only the latest log for each lead
+      const latestCustomerGroupLogs = new Map();
+      customerGroupLogs?.forEach(log => {
+        if (!latestCustomerGroupLogs.has(log.lead_id)) {
+          latestCustomerGroupLogs.set(log.lead_id, log);
+        }
+      });
+
+      const newCustomers = Array.from(latestCustomerGroupLogs.values()).filter(log => log.lead_group === 'ลูกค้าใหม่').length;
+      const existingCustomers = Array.from(latestCustomerGroupLogs.values()).filter(log => log.lead_group === 'ลูกค้าเดิม').length;
+      
+      // Get follow-up count from productivity logs - CORRECTED LOGIC
+      // Filter productivity logs directly by date instead of filtering leads first
+      let followUpQuery = supabase
+        .from('lead_productivity_logs')
+        .select(`
+          id,
+          lead_id,
+          created_at_thai,
+          leads!inner(
+            id,
+            category,
+            created_at_thai,
+            sale_owner_id
+          )
+        `)
+        .eq('leads.category', 'Package')
+        .eq('leads.is_archived', false)
+        .not('leads.sale_owner_id', 'is', null); // Only leads with owners
+
+      // Only apply date filter if dates are selected
+      if (startDate && endDate) {
+        followUpQuery = followUpQuery
+          .gte('created_at_thai', startDate)  // ✅ Filter by productivity log date
+          .lte('created_at_thai', endDate);
+      }
+
+      // Apply sales filter after all other filters
+      if (salesFilter !== 'all') {
+        followUpQuery = followUpQuery.eq('leads.sale_owner_id', parseInt(salesFilter));
+      }
+
+      const { data: followUpLogs, error: followUpError } = await followUpQuery;
+      
+      const followUpCount = followUpLogs?.length || 0;
+
+      // Calculate additional metrics
+      
+      // Get total unique leads with activity in selected date range for rate calculation
+      let activityQuery = supabase
+        .from('lead_productivity_logs')
+        .select(`
+          lead_id,
+          leads!inner(
+            id,
+            category,
+            sale_owner_id
+          )
+        `)
+        .eq('leads.category', 'Package')
+        .eq('leads.is_archived', false)
+        .not('leads.sale_owner_id', 'is', null);
+
+      // Only apply date filter if dates are selected
+      if (startDate && endDate) {
+        activityQuery = activityQuery
+          .gte('created_at_thai', startDate)
+          .lte('created_at_thai', endDate);
+      }
+
+      // Apply sales filter after all other filters
+      if (salesFilter !== 'all') {
+        activityQuery = activityQuery.eq('leads.sale_owner_id', parseInt(salesFilter));
+      }
+
+      const { data: activityLogs } = await activityQuery;
+      const totalLeadsWithActivity = new Set(activityLogs?.map(log => log.lead_id) || []).size;
+      
+      // Get appointments data for appointment rate calculation - CORRECTED LOGIC
+      // Filter productivity logs directly by date instead of filtering leads first
+      const validLeadIds = validActivityLeads.map(lead => lead.id);
+      let leadsWithAppointments = new Set();
+      
+      if (validLeadIds.length > 0) {
+        // Get productivity logs for appointments with date filter - CORRECTED LOGIC
+        let productivityLogsForAppointmentsQuery = supabase
+          .from('lead_productivity_logs')
+          .select(`
+            lead_id, 
+            id, 
+            created_at_thai,
+            leads!inner(
+              id,
+              category,
+              sale_owner_id
+            )
+          `)
+          .eq('leads.category', 'Package')
+          .eq('leads.is_archived', false)
+          .not('leads.sale_owner_id', 'is', null)
+          .in('lead_id', validLeadIds);
+
+        // Only apply date filter if dates are selected
+        if (startDate && endDate) {
+          productivityLogsForAppointmentsQuery = productivityLogsForAppointmentsQuery
+            .gte('created_at_thai', startDate)  // ✅ Filter by productivity log date
+            .lte('created_at_thai', endDate);
+        }
+
+        // Apply sales filter after all other filters
+        if (salesFilter !== 'all') {
+          productivityLogsForAppointmentsQuery = productivityLogsForAppointmentsQuery.eq('leads.sale_owner_id', parseInt(salesFilter));
+        }
+
+        const { data: productivityLogsForAppointments, error: appointmentsLogsError } = await productivityLogsForAppointmentsQuery;
+        
+        if (productivityLogsForAppointments && productivityLogsForAppointments.length > 0) {
+          const productivityLogIds = productivityLogsForAppointments.map(log => log.id);
+
+          if (productivityLogIds.length > 0) {
+            // Get appointments for these productivity logs
+            const { data: appointmentsData, error: appointmentsError } = await supabase
+              .from('appointments')
+              .select('productivity_log_id')
+              .in('productivity_log_id', productivityLogIds);
+
+            if (appointmentsError) {
+              console.error('Error fetching appointments:', appointmentsError);
+            }
+
+            // Count unique leads that have appointments
+            appointmentsData?.forEach(appointment => {
+              const productivityLog = productivityLogsForAppointments.find(log => log.id === appointment.productivity_log_id);
+              if (productivityLog) {
+                leadsWithAppointments.add(productivityLog.lead_id);
+              }
+            });
+          }
+        }
+      }
+
+      const appointmentRate = totalLeadsWithActivity > 0 ? (leadsWithAppointments.size / totalLeadsWithActivity) * 100 : 0;
+
+      // ✅ ใช้ข้อมูลจาก quotationData แทนการคำนวณซับซ้อน
+      // ใช้จำนวน productivity logs ที่มี quotations แทน unique leads เพื่อให้สอดคล้องกับ customer-status
+      const quotationRate = totalLeadsWithActivity > 0 ? (quotationData.quotationLogsWithQuotations.length / totalLeadsWithActivity) * 100 : 0;
+
+      // Calculate contactable rate from productivity logs - CORRECTED LOGIC
+      // Filter productivity logs directly by date instead of filtering leads first
+      let leadsWithContactableStatus = new Set();
+      let leadsWithUncontactableStatus = new Set();
+      let leadsWithContactStatus = new Set(); // Total leads with any contact status
+      
+      if (validLeadIds.length > 0) {
+        // Get latest productivity logs for contact status calculation
+        let productivityLogsForContactQuery = supabase
+          .from('lead_productivity_logs')
+          .select(`
+            lead_id, 
+            contact_status, 
+            created_at_thai,
+            leads!inner(
+              id,
+              sale_owner_id
+            )
+          `)
+          .in('lead_id', validLeadIds)
+          .order('created_at_thai', { ascending: false });
+
+        // Only apply date filter if dates are selected
+        if (startDate && endDate) {
+          productivityLogsForContactQuery = productivityLogsForContactQuery
+            .gte('created_at_thai', startDate)  // ✅ Filter by productivity log date
+            .lte('created_at_thai', endDate);
+        }
+
+        // Apply sales filter after all other filters
+        if (salesFilter !== 'all') {
+          productivityLogsForContactQuery = productivityLogsForContactQuery.eq('leads.sale_owner_id', parseInt(salesFilter));
+        }
+
+        const { data: productivityLogsForContact, error: contactError } = await productivityLogsForContactQuery;
+        
+        // ✅ ใช้ productivity logs ทั้งหมดที่มี quotation แทนการใช้เฉพาะ log ล่าสุด
+        // เหตุผล: ต้องการยอดขายครบถ้วนจากทุก productivity log ที่มี quotation
+        const logsWithQuotations = productivityLogsForContact?.filter(log => {
+          // ตรวจสอบว่ามี quotation หรือไม่ (จะดึง quotations แยกในขั้นตอนถัดไป)
+          return true; // ใช้ logs ทั้งหมดเพื่อให้ครบถ้วน
+        }) || [];
+        
+        logsWithQuotations.forEach(log => {
+          if (log.contact_status === 'ติดต่อได้') {
+            leadsWithContactableStatus.add(log.lead_id);
+            leadsWithContactStatus.add(log.lead_id);
+          } else if (log.contact_status === 'ติดต่อไม่ได้') {
+            leadsWithUncontactableStatus.add(log.lead_id);
+            leadsWithContactStatus.add(log.lead_id);
+          }
+        });
+      }
+
+      // Calculate rates based on total leads with activity in selected period
+      const contactableRate = totalLeadsWithActivity > 0 ? (leadsWithContactableStatus.size / totalLeadsWithActivity) * 100 : 0;
+      const uncontactableRate = totalLeadsWithActivity > 0 ? (leadsWithUncontactableStatus.size / totalLeadsWithActivity) * 100 : 0;
+      
+      // Calculate average hotness from productivity logs
+      const hotnessValues = Array.from(latestHotnessLogs.values()).map(log => log.hotness || 0).filter(h => h > 0);
+      const averageHotness = hotnessValues.length > 0 
+        ? (hotnessValues.reduce((sum, h) => sum + h, 0) / hotnessValues.length).toFixed(1)
+        : '0.0';
+
+      return {
+        totalProjects,
+        totalActiveLeads: validActivityLeads.length,  // เพิ่มบรรทัดนี้
+        activeLeadsCount,  // เพิ่มจำนวนลีดที่ยังไม่ปิดการขาย
+        opportunityValue,
+        winValue,
+        winRate,
+        newCustomers,
+        existingCustomers,
+        followUpCount,
+        statusData,
+        sourceData,
+        regionData,
+        hotnessData,
+        paymentMethodData,
+        // Add new metrics
+        appointmentRate,
+        quotationRate,
+        contactableRate,
+        uncontactableRate,
+        averageHotness,
+      };
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+      throw error;
+    }
+  };
+
+  // React Query for caching dashboard data
+  const { data: cachedDashboardData, isLoading: isQueryLoading, refetch } = useQuery({
+    queryKey: ['package-dashboard', dateRangeFilter, salesFilter],
+    queryFn: fetchDashboardData,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes (renamed from cacheTime)
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    enabled: false, // We'll trigger it manually
+  });
+
+  const { saleChanceData, loading: chartLoading, error: chartError, refetch: refetchChart } = useSaleChanceStats({
+    dateRange: dateRangeFilter,
+    salesFilter,
+    category: 'Package'
+  });
+
+  useEffect(() => {
+    // Use React Query for better caching and performance
+    refetch();
+  }, [dateRangeFilter, salesFilter, refetch]);
+
+  // Update dashboard data when cached data changes
+  useEffect(() => {
+    if (cachedDashboardData) {
+      setDashboardData(cachedDashboardData);
+      setLoading(false);
+    }
+  }, [cachedDashboardData]);
+
+  // Function to get leads for specific metrics
+  const getLeadsForMetric = async (metricType: 'quotation' | 'contactable' | 'uncontactable' | 'appointment') => {
+    try {
+      // Get current leads data with same filters
+      let startDate: string, endDate: string;
+      
+      if (dateRangeFilter && dateRangeFilter.from) {
+        const fromDate = dateRangeFilter.from;
+        const toDate = dateRangeFilter.to || dateRangeFilter.from;
+        
+        const formatter = new Intl.DateTimeFormat('sv-SE', {
+          timeZone: 'Asia/Bangkok',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        });
+        
+        const startDateString = formatter.format(fromDate);
+        startDate = startDateString + 'T00:00:00.000';
+        
+        const endDateString = formatter.format(toDate);
+        endDate = endDateString + 'T23:59:59.999';
+      } else {
+        const formatter = new Intl.DateTimeFormat('sv-SE', {
+          timeZone: 'Asia/Bangkok',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        });
+        
+        const today = new Date();
+        const todayString = formatter.format(today);
+        
+        startDate = todayString + 'T00:00:00.000';
+        endDate = todayString + 'T23:59:59.999';
+      }
+
+      // Get base leads (ใช้ updated_at_thai เพื่อให้ได้ลีดที่มีกิจกรรม)
+      let leadsQuery = supabase
+        .from('leads')
+        .select('id, full_name, status, platform, region, created_at_thai, sale_owner_id, category, is_archived, tel, line_id')
+        .eq('category', 'Package')
+        .eq('is_archived', false)
+        .not('sale_owner_id', 'is', null)
+        .gte('updated_at_thai', startDate)
+        .lte('updated_at_thai', endDate);
+
+      if (salesFilter !== 'all') {
+        leadsQuery = leadsQuery.eq('sale_owner_id', parseInt(salesFilter));
+      }
+
+      const { data: allLeads } = await leadsQuery;
+      if (!allLeads) return [];
+
+      const validLeads = allLeads.filter(lead => lead.tel && lead.tel.trim() !== '');
+      
+      if (metricType === 'quotation') {
+        // ✅ ใช้ utility function เดียวกันกับ main calculation เพื่อความสอดคล้อง
+        const salesFilterParam = salesFilter !== 'all' ? salesFilter : undefined;
+        
+        // ดึงข้อมูลการออก QT สำหรับ Package
+        const quotationData = await getQuotationDataInPeriod(
+          startDate || new Date().toISOString(),
+          endDate || new Date().toISOString(),
+          'Package',
+          salesFilterParam
+        );
+        
+        // ✅ แสดง productivity logs แต่ละตัวแทน unique leads เพื่อให้สอดคล้องกับ customer-status
+        return quotationData.quotationLogsWithQuotations.map(log => {
+          // หา lead data สำหรับ log นี้
+          const leadData = validLeads.find(lead => lead.id === log.leadId);
+          
+          if (!leadData) {
+            // ถ้าไม่เจอ lead data ให้สร้างข้อมูลพื้นฐาน
+            return {
+              id: log.leadId,
+              full_name: log.leadName || 'ไม่ระบุ',
+              tel: log.leadTel || '',
+              platform: log.leadPlatform || 'ไม่ระบุ',
+              region: 'ไม่ระบุ',
+              status: log.leadStatus || 'ไม่ระบุ',
+              category: log.leadCategory || 'Package',
+              sale_owner_id: log.saleOwnerId || 0,
+              created_at_thai: log.logDate,
+              quotationLogs: [{
+                logId: log.logId,
+                logDate: log.logDate,
+                quotationAmount: log.quotationAmount,
+                quotationCount: log.quotationCount
+              }]
+            };
+          }
+          
+          return {
+            ...leadData,
+            quotationLogs: [{
+              logId: log.logId,
+              logDate: log.logDate,
+              quotationAmount: log.quotationAmount,
+              quotationCount: log.quotationCount
+            }]
+          };
+        });
+        
+      } else if (metricType === 'contactable' || metricType === 'uncontactable') {
+        // Get leads with contact status
+        const leadIds = validLeads.map(lead => lead.id);
+        const targetStatus = metricType === 'contactable' ? 'ติดต่อได้' : 'ติดต่อไม่ได้';
+        
+        let contactLogsQuery = supabase
+          .from('lead_productivity_logs')
+          .select('lead_id, contact_status, created_at_thai')
+          .in('lead_id', leadIds)
+          .eq('contact_status', targetStatus)
+          .order('created_at_thai', { ascending: false });
+
+        // Only apply date filter if dates are selected
+        if (startDate && endDate) {
+          contactLogsQuery = contactLogsQuery
+            .gte('created_at_thai', startDate)
+            .lte('created_at_thai', endDate);
+        }
+
+        const { data: contactLogs } = await contactLogsQuery;
+        
+        // Get latest log for each lead
+        const latestLogsByLead = new Map();
+        contactLogs?.forEach(log => {
+          if (!latestLogsByLead.has(log.lead_id)) {
+            latestLogsByLead.set(log.lead_id, log);
+          }
+        });
+        
+        const leadsWithContactStatus = new Set(Array.from(latestLogsByLead.keys()));
+        return validLeads.filter(lead => leadsWithContactStatus.has(lead.id));
+        
+      } else if (metricType === 'appointment') {
+        // Get leads with appointments
+        const leadIds = validLeads.map(lead => lead.id);
+        
+        let appointmentLogsQuery = supabase
+          .from('lead_productivity_logs')
+          .select(`
+            id,
+            lead_id,
+            appointments!inner(id)
+          `)
+          .in('lead_id', leadIds);
+
+        // Only apply date filter if dates are selected
+        if (startDate && endDate) {
+          appointmentLogsQuery = appointmentLogsQuery
+            .gte('created_at_thai', startDate)
+            .lte('created_at_thai', endDate);
+        }
+
+        const { data: appointmentLogs } = await appointmentLogsQuery;
+        const leadsWithAppointments = new Set(appointmentLogs?.map(log => log.lead_id) || []);
+        
+        return validLeads.filter(lead => leadsWithAppointments.has(lead.id));
+      }
+      
+      return [];
+    } catch (error) {
+      console.error('Error getting leads for metric:', error);
+      return [];
+    }
+  };
+
+  // Handle metric click
+  const handleMetricClick = async (metricType: 'quotation' | 'contactable' | 'uncontactable' | 'appointment') => {
+    const leads = await getLeadsForMetric(metricType);
+    
+    const titles = {
+      quotation: 'ลีดที่ออกใบเสนอราคา',
+      contactable: 'ลีดที่ติดต่อได้',
+      uncontactable: 'ลีดที่ติดต่อไม่ได้',
+      appointment: 'ลีดที่ทำนัดฟิลด์'
+    };
+    
+    setMetricModalState({
+      isOpen: true,
+      title: titles[metricType],
+      leads,
+      metricType
+    });
+  };
+
+  const fetchDashboardData = async (): Promise<PackageDashboardData> => {
+    try {
+      // Use proper timezone handling for date range
+      let startDate: string, endDate: string;
+      
+      if (dateRangeFilter && dateRangeFilter.from) {
+        const fromDate = dateRangeFilter.from;
+        const toDate = dateRangeFilter.to || dateRangeFilter.from;
+        
+        // Use Intl.DateTimeFormat with Thailand timezone to get correct dates
+        const formatter = new Intl.DateTimeFormat('sv-SE', {
+          timeZone: 'Asia/Bangkok',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        });
+        
+        // Format start date - Start from 00:00:00 Thai time
+        const startDateString = formatter.format(fromDate);
+        startDate = startDateString + 'T00:00:00.000';
+        
+        // Format end date - End at 23:59:59 Thai time
+        const endDateString = formatter.format(toDate);
+        endDate = endDateString + 'T23:59:59.999';
+      } else {
+        // No date range selected - show all data (no date filter)
+        startDate = '';
+        endDate = '';
+      }
+
+      // ✅ แก้ไข N+1 Queries: ใช้ Promise.all สำหรับ parallel queries
+      const salesFilterParam = salesFilter !== 'all' ? salesFilter : undefined;
+      
+      // สร้าง queries ทั้งหมดก่อน
+      let newLeadsCountQuery = supabase
+        .from('leads')
+        .select('*', { count: 'exact', head: true })
+        .eq('category', 'Package')
+        .eq('is_archived', false)
+        .not('sale_owner_id', 'is', null)
+        .not('tel', 'is', null)
+        .neq('tel', '');
+
+      let activityLeadsQuery = supabase
+        .from('leads')
+        .select('id, full_name, status, platform, region, created_at_thai, sale_owner_id, category, is_archived, tel, line_id')
+        .eq('category', 'Package')
+        .eq('is_archived', false)
+        .not('sale_owner_id', 'is', null);
+
+      // Apply date filters
+      if (startDate && endDate) {
+        newLeadsCountQuery = newLeadsCountQuery
+          .gte('assigned_at_thai', startDate)
+          .lte('assigned_at_thai', endDate);
+        activityLeadsQuery = activityLeadsQuery
+          .gte('updated_at_thai', startDate)
+          .lte('updated_at_thai', endDate);
+      }
+
+      // Apply sales filters
+      if (salesFilter !== 'all') {
+        newLeadsCountQuery = newLeadsCountQuery.eq('sale_owner_id', parseInt(salesFilter));
+        activityLeadsQuery = activityLeadsQuery.eq('sale_owner_id', parseInt(salesFilter));
+      }
+
+      // ✅ ดึงข้อมูลทั้งหมดพร้อมกัน (Parallel Queries)
+      const [
+        newLeadsCountResult,
+        activityLeadsResult,
+        packageSalesData,
+        quotationData,
+        opportunityData
+      ] = await Promise.all([
+        newLeadsCountQuery,
+        activityLeadsQuery,
+        // ดึงข้อมูลยอดขาย
+        startDate && endDate ? getSalesDataByCategory(startDate, endDate, 'Package', salesFilterParam) : Promise.resolve({ quotations: [], salesLogs: [] }),
+        // ดึงข้อมูลการออก QT
+        getQuotationDataInPeriod(startDate || new Date().toISOString(), endDate || new Date().toISOString(), 'Package', salesFilterParam),
+        // ดึงข้อมูลโอกาสการขาย
+        getOpportunityDataInPeriod(startDate || new Date().toISOString(), endDate || new Date().toISOString(), 'Package', salesFilterParam)
+      ]);
+
+      const { count: totalProjects } = newLeadsCountResult;
+      const { data: activityLeads } = activityLeadsResult;
+
+      if (totalProjects === null || !activityLeads) return;
+
+      // ใช้ activityLeads สำหรับการคำนวณเมตริกอื่นๆ
+      const validActivityLeads = activityLeads.filter(lead => lead.tel && lead.tel.trim() !== '');
+      const wonLeads = validActivityLeads.filter(lead => lead.status === 'ปิดการขาย');
+      
+      // ✅ ใช้ข้อมูลที่ดึงมาแล้วจาก Promise.all
+      const allQuotations = packageSalesData.quotations;
+      const productivityLogsData = packageSalesData.salesLogs;
+      
+      // กำหนดค่าจาก opportunityData
+      const opportunityValue = opportunityData.totalOpportunityValue;
+      
+      // Win value should come from closed sales quotations (leads with status "ปิดการขาย")
+      const winValue = allQuotations.reduce((sum, q) => sum + (q.total_amount || 0), 0);
+      
+      // Calculate win rate based on actual closed sales vs total leads
+      const totalLeadsCount = validActivityLeads.length;
+      const closedSalesCount = productivityLogsData?.length || 0;  // ✅ ใช้ข้อมูลจาก productivity logs
+      const winRate = totalLeadsCount > 0 ? (closedSalesCount / totalLeadsCount) * 100 : 0;
+      
+      // คำนวณจำนวนลีดที่ยังไม่ปิดการขาย (สำหรับ Card โอกาส)
+      const activeLeadsCount = validActivityLeads.filter(lead => 
+        lead.status !== 'ปิดการขาย' && lead.status !== 'ยังปิดการขายไม่สำเร็จ'
+      ).length;
+      
+
+
+      // Status distribution
+      const statusCount = activityLeads.reduce((acc, lead) => {
+        acc[lead.status || 'ไม่ระบุ'] = (acc[lead.status || 'ไม่ระบุ'] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      const statusData = Object.entries(statusCount).map(([status, count], index) => ({
+        name: status,
+        value: count,
+        color: ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6'][index % 5]
+      }));
+
+      const sourceCount = activityLeads.reduce((acc, lead) => {
+        acc[lead.platform || 'ไม่ระบุ'] = (acc[lead.platform || 'ไม่ระบุ'] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      const sourceData = Object.entries(sourceCount).map(([source, count], index) => ({
+        name: source,
+        value: count,
+        color: ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#F97316'][index % 6]
+      }));
+
+      const regionCount = activityLeads.reduce((acc, lead) => {
+        acc[lead.region || 'ไม่ระบุ'] = (acc[lead.region || 'ไม่ระบุ'] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      const regionData = Object.entries(regionCount).map(([region, count]) => ({
+        name: region,
+        value: count
+      }));
+
+      // Get real hotness data from productivity logs - CORRECTED LOGIC
+      // Filter productivity logs directly by date instead of filtering leads first
+      let hotnessQuery = supabase
+        .from('lead_productivity_logs')
+        .select(`
+          hotness,
+          lead_id,
+          created_at_thai,
+          leads!inner(
+            id,
+            category,
+            sale_owner_id
+          )
+        `)
+        .eq('leads.category', 'Package')
+        .eq('leads.is_archived', false)
+        .not('leads.sale_owner_id', 'is', null) // Only leads with owners
+        .not('hotness', 'is', null)
+        .order('created_at_thai', { ascending: false });
+
+      // Only apply date filter if dates are selected
+      if (startDate && endDate) {
+        hotnessQuery = hotnessQuery
+          .gte('created_at_thai', startDate)  // ✅ Filter by productivity log date
+          .lte('created_at_thai', endDate);
+      }
+
+      // Apply sales filter after all other filters
+      if (salesFilter !== 'all') {
+        hotnessQuery = hotnessQuery.eq('leads.sale_owner_id', parseInt(salesFilter));
+      }
+
+      const { data: hotnessLogs, error: hotnessError } = await hotnessQuery;
+      
+
+
+      let latestHotnessLogs = new Map();
+      if (hotnessLogs && hotnessLogs.length > 0) {
+        // Use only the latest log for each lead
+        hotnessLogs.forEach(log => {
+          if (!latestHotnessLogs.has(log.lead_id)) {
+            latestHotnessLogs.set(log.lead_id, log);
+          }
+        });
+        
+
+      }
+
+      const hotnessGroups = Array.from(latestHotnessLogs.values()).reduce((acc, log) => {
+        const hotness = log.hotness || 0;
+        if (hotness >= 8) acc.hot += 1;
+        else if (hotness >= 5) acc.warm += 1;
+        else acc.cold += 1;
+        return acc;
+      }, { hot: 0, warm: 0, cold: 0 });
+
+      const hotnessData = [
+        { name: 'น่าสนใจมาก\n(8-10)', value: hotnessGroups.hot || 0 },
+        { name: 'เฉยๆ\n(5-7)', value: hotnessGroups.warm || 0 },
+        { name: 'ไม่น่าสนใจ\n(1-4)', value: hotnessGroups.cold || 0 },
+      ];
+      
+
+
+
+
+
+      // Get real payment method data from quotations - CORRECTED LOGIC
+      // Use quotations that come from productivity logs within date range
+      const paymentMethodCount = quotationData.quotations.reduce((acc, q) => {
+        const method = q.payment_method || 'ไม่ระบุ';
+        acc[method] = (acc[method] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      const paymentMethodData = Object.entries(paymentMethodCount).map(([name, value]) => ({
+        name,
+        value: value as number
+      }));
+
+
+
+      // Get customer group data from productivity logs - CORRECTED LOGIC
+      // Use 2-step query to avoid foreign key filter issues
+      let customerGroupQuery;
+      
+      if (startDate && endDate) {
+        // Step 1: Get leads with updated_at_thai in date range
+        const { data: leadsInDateRange } = await supabase
+          .from('leads')
+          .select('id, sale_owner_id')
+          .eq('category', 'Package')
+          .eq('is_archived', false)
+          .not('sale_owner_id', 'is', null)
+          .gte('updated_at_thai', startDate)
+          .lte('updated_at_thai', endDate);
+
+        let filteredLeads = leadsInDateRange || [];
+        if (salesFilter !== 'all') {
+          filteredLeads = filteredLeads.filter(lead => lead.sale_owner_id === parseInt(salesFilter));
+        }
+
+        const leadIds = filteredLeads.map(lead => lead.id);
+
+        // Step 2: Get productivity logs for these leads
+        if (leadIds.length > 0) {
+          customerGroupQuery = supabase
+            .from('lead_productivity_logs')
+            .select(`
+              lead_group,
+              lead_id,
+              leads!inner(
+                id,
+                category,
+                sale_owner_id
+              )
+            `)
+            .in('lead_id', leadIds)
+            .not('lead_group', 'is', null)
+            .order('lead_id', { ascending: false });
+        } else {
+          // If no leads found, create an empty query to avoid undefined error
+          customerGroupQuery = supabase
+            .from('lead_productivity_logs')
+            .select(`
+              lead_group, 
+              lead_id,
+              leads!inner(
+                id,
+                category,
+                sale_owner_id
+              )
+            `)
+            .eq('lead_id', -1); // This will return no results
+        }
+      } else {
+        // No date filter - get all leads with customer groups
+        customerGroupQuery = supabase
+          .from('lead_productivity_logs')
+          .select(`
+            lead_group,
+            lead_id,
+            leads!inner(
+              id,
+              category,
+              sale_owner_id
+            )
+          `)
+          .eq('leads.category', 'Package')
+          .eq('leads.is_archived', false)
+          .not('leads.sale_owner_id', 'is', null)
+          .not('lead_group', 'is', null)
+          .order('lead_id', { ascending: false });
+      }
+
+      // Apply sales filter after all other filters
+      if (salesFilter !== 'all' && customerGroupQuery) {
+        customerGroupQuery = customerGroupQuery.eq('leads.sale_owner_id', parseInt(salesFilter));
+      }
+
+      // Ensure customerGroupQuery is defined before executing
+      let customerGroupLogs = [];
+      let customerGroupError = null;
+      
+      if (!customerGroupQuery) {
+        console.warn('customerGroupQuery is undefined, skipping customer group data fetch');
+      } else {
+        const result = await customerGroupQuery;
+        customerGroupLogs = result.data || [];
+        customerGroupError = result.error;
+      }
+      
+      // Check for errors
+      if (customerGroupError) {
+        console.error('Error fetching customer group data:', customerGroupError);
+      }
+
+      // Use only the latest log for each lead
+      const latestCustomerGroupLogs = new Map();
+      customerGroupLogs?.forEach(log => {
+        if (!latestCustomerGroupLogs.has(log.lead_id)) {
+          latestCustomerGroupLogs.set(log.lead_id, log);
+        }
+      });
+
+      const newCustomers = Array.from(latestCustomerGroupLogs.values()).filter(log => log.lead_group === 'ลูกค้าใหม่').length;
+      const existingCustomers = Array.from(latestCustomerGroupLogs.values()).filter(log => log.lead_group === 'ลูกค้าเดิม').length;
+      
+
+
+      // Get follow-up count from productivity logs - CORRECTED LOGIC
+      // Filter productivity logs directly by date instead of filtering leads first
+      let followUpQuery = supabase
+        .from('lead_productivity_logs')
+        .select(`
+          id,
+          lead_id,
+          created_at_thai,
+          leads!inner(
+            id,
+            category,
+            created_at_thai,
+            sale_owner_id
+          )
+        `)
+        .eq('leads.category', 'Package')
+        .eq('leads.is_archived', false)
+        .not('leads.sale_owner_id', 'is', null); // Only leads with owners
+
+      // Only apply date filter if dates are selected
+      if (startDate && endDate) {
+        followUpQuery = followUpQuery
+          .gte('created_at_thai', startDate)  // ✅ Filter by productivity log date
+          .lte('created_at_thai', endDate);
+      }
+
+      // Apply sales filter after all other filters
+      if (salesFilter !== 'all') {
+        followUpQuery = followUpQuery.eq('leads.sale_owner_id', parseInt(salesFilter));
+      }
+
+      const { data: followUpLogs, error: followUpError } = await followUpQuery;
+      
+
+      
+      const followUpCount = followUpLogs?.length || 0;
+
+      // Calculate additional metrics
+      
+      // Get total unique leads with activity in selected date range for rate calculation
+      let activityQuery = supabase
+        .from('lead_productivity_logs')
+        .select(`
+          lead_id,
+          leads!inner(
+            id,
+            category,
+            sale_owner_id
+          )
+        `)
+        .eq('leads.category', 'Package')
+        .eq('leads.is_archived', false)
+        .not('leads.sale_owner_id', 'is', null);
+
+      // Only apply date filter if dates are selected
+      if (startDate && endDate) {
+        activityQuery = activityQuery
+          .gte('created_at_thai', startDate)
+          .lte('created_at_thai', endDate);
+      }
+
+      // Apply sales filter after all other filters
+      if (salesFilter !== 'all') {
+        activityQuery = activityQuery.eq('leads.sale_owner_id', parseInt(salesFilter));
+      }
+
+      const { data: activityLogs } = await activityQuery;
+      const totalLeadsWithActivity = new Set(activityLogs?.map(log => log.lead_id) || []).size;
+      
+      // Get appointments data for appointment rate calculation - CORRECTED LOGIC
+      // Filter productivity logs directly by date instead of filtering leads first
+              const validLeadIds = validActivityLeads.map(lead => lead.id);
+      let leadsWithAppointments = new Set();
+      
+      if (validLeadIds.length > 0) {
+        // Get productivity logs for appointments with date filter - CORRECTED LOGIC
+        let productivityLogsForAppointmentsQuery = supabase
+          .from('lead_productivity_logs')
+          .select(`
+            lead_id, 
+            id, 
+            created_at_thai,
+            leads!inner(
+              id,
+              category,
+              sale_owner_id
+            )
+          `)
+          .eq('leads.category', 'Package')
+          .eq('leads.is_archived', false)
+          .not('leads.sale_owner_id', 'is', null)
+          .in('lead_id', validLeadIds);
+
+        // Only apply date filter if dates are selected
+        if (startDate && endDate) {
+          productivityLogsForAppointmentsQuery = productivityLogsForAppointmentsQuery
+            .gte('created_at_thai', startDate)  // ✅ Filter by productivity log date
+            .lte('created_at_thai', endDate);
+        }
+
+        // Apply sales filter after all other filters
+        if (salesFilter !== 'all') {
+          productivityLogsForAppointmentsQuery = productivityLogsForAppointmentsQuery.eq('leads.sale_owner_id', parseInt(salesFilter));
+        }
+
+        const { data: productivityLogsForAppointments, error: appointmentsLogsError } = await productivityLogsForAppointmentsQuery;
+        
+
+
+        if (productivityLogsForAppointments && productivityLogsForAppointments.length > 0) {
+          const productivityLogIds = productivityLogsForAppointments.map(log => log.id);
+
+          if (productivityLogIds.length > 0) {
+            // Get appointments for these productivity logs
+            const { data: appointmentsData, error: appointmentsError } = await supabase
+              .from('appointments')
+              .select('productivity_log_id')
+              .in('productivity_log_id', productivityLogIds);
+
+            if (appointmentsError) {
+              console.error('Error fetching appointments:', appointmentsError);
+            }
+
+            // Count unique leads that have appointments
+            appointmentsData?.forEach(appointment => {
+              const productivityLog = productivityLogsForAppointments.find(log => log.id === appointment.productivity_log_id);
+              if (productivityLog) {
+                leadsWithAppointments.add(productivityLog.lead_id);
+              }
+            });
+
+
+          }
+        }
+      }
+
+      const appointmentRate = totalLeadsWithActivity > 0 ? (leadsWithAppointments.size / totalLeadsWithActivity) * 100 : 0;
+
+      // ✅ ใช้ข้อมูลจาก quotationData แทนการคำนวณซับซ้อน
+      // ใช้จำนวน productivity logs ที่มี quotations แทน unique leads เพื่อให้สอดคล้องกับ customer-status
+      const quotationRate = totalLeadsWithActivity > 0 ? (quotationData.quotationLogsWithQuotations.length / totalLeadsWithActivity) * 100 : 0;
+
+      // Calculate contactable rate from productivity logs - CORRECTED LOGIC
+      // Filter productivity logs directly by date instead of filtering leads first
+      let leadsWithContactableStatus = new Set();
+      let leadsWithUncontactableStatus = new Set();
+      let leadsWithContactStatus = new Set(); // Total leads with any contact status
+      
+      if (validLeadIds.length > 0) {
+        // Get latest productivity logs for contact status calculation
+        let productivityLogsForContactQuery = supabase
+          .from('lead_productivity_logs')
+          .select(`
+            lead_id, 
+            contact_status, 
+            created_at_thai,
+            leads!inner(
+              id,
+              sale_owner_id
+            )
+          `)
+          .in('lead_id', validLeadIds)
+          .order('created_at_thai', { ascending: false });
+
+        // Only apply date filter if dates are selected
+        if (startDate && endDate) {
+          productivityLogsForContactQuery = productivityLogsForContactQuery
+            .gte('created_at_thai', startDate)  // ✅ Filter by productivity log date
+            .lte('created_at_thai', endDate);
+        }
+
+        // Apply sales filter after all other filters
+        if (salesFilter !== 'all') {
+          productivityLogsForContactQuery = productivityLogsForContactQuery.eq('leads.sale_owner_id', parseInt(salesFilter));
+        }
+
+        const { data: productivityLogsForContact, error: contactError } = await productivityLogsForContactQuery;
+        
+
+        
+        // ✅ ใช้ productivity logs ทั้งหมดที่มี quotation แทนการใช้เฉพาะ log ล่าสุด
+        // เหตุผล: ต้องการยอดขายครบถ้วนจากทุก productivity log ที่มี quotation
+        const logsWithQuotations = productivityLogsForContact?.filter(log => {
+          // ตรวจสอบว่ามี quotation หรือไม่ (จะดึง quotations แยกในขั้นตอนถัดไป)
+          return true; // ใช้ logs ทั้งหมดเพื่อให้ครบถ้วน
+        }) || [];
+        
+        logsWithQuotations.forEach(log => {
+          if (log.contact_status === 'ติดต่อได้') {
+            leadsWithContactableStatus.add(log.lead_id);
+            leadsWithContactStatus.add(log.lead_id);
+          } else if (log.contact_status === 'ติดต่อไม่ได้') {
+            leadsWithUncontactableStatus.add(log.lead_id);
+            leadsWithContactStatus.add(log.lead_id);
+          }
+        });
+      }
+
+      // Calculate rates based on total leads with activity in selected period
+      const contactableRate = totalLeadsWithActivity > 0 ? (leadsWithContactableStatus.size / totalLeadsWithActivity) * 100 : 0;
+      const uncontactableRate = totalLeadsWithActivity > 0 ? (leadsWithUncontactableStatus.size / totalLeadsWithActivity) * 100 : 0;
+      
+
+
+      // Calculate average hotness from productivity logs
+      const hotnessValues = Array.from(latestHotnessLogs.values()).map(log => log.hotness || 0).filter(h => h > 0);
+      const averageHotness = hotnessValues.length > 0 
+        ? (hotnessValues.reduce((sum, h) => sum + h, 0) / hotnessValues.length).toFixed(1)
+        : '0.0';
+      
+
+
+
+
+
+
+      return {
+        totalProjects,
+        totalActiveLeads: validActivityLeads.length,  // เพิ่มบรรทัดนี้
+        activeLeadsCount,  // เพิ่มจำนวนลีดที่ยังไม่ปิดการขาย
+        opportunityValue,
+        winValue,
+        winRate,
+        newCustomers,
+        existingCustomers,
+        followUpCount,
+        statusData,
+        sourceData,
+        regionData,
+        hotnessData,
+        paymentMethodData,
+        // Add new metrics
+        appointmentRate,
+        quotationRate,
+        contactableRate,
+        uncontactableRate,
+        averageHotness,
+      };
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+      throw error;
+    }
+  };
+
+
+
+  // Skeleton loading component
+  const SkeletonCard = () => (
+    <Card className="bg-white">
+      <CardHeader className="pb-2">
+        <div className="h-4 bg-gray-200 rounded w-3/4 animate-pulse"></div>
+      </CardHeader>
+      <CardContent className="py-3">
+        <div className="h-8 bg-gray-200 rounded w-1/2 animate-pulse mb-2"></div>
+        <div className="h-3 bg-gray-200 rounded w-1/3 animate-pulse"></div>
+      </CardContent>
+    </Card>
+  );
+
+  const SkeletonChart = () => (
+    <Card className="bg-white">
+      <CardHeader className="pb-1">
+        <div className="h-4 bg-gray-200 rounded w-1/2 animate-pulse"></div>
+      </CardHeader>
+      <CardContent className="py-6 flex items-center justify-center h-72">
+        <div className="h-64 w-full bg-gray-200 rounded-lg animate-pulse"></div>
+      </CardContent>
+    </Card>
+  );
+
+  if (loading || isQueryLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-2">
+        <div className="w-full space-y-2">
+          {/* Header Skeleton */}
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <div className="h-7 w-7 bg-gray-200 rounded animate-pulse"></div>
+              <div>
+                <div className="h-8 bg-gray-200 rounded w-64 animate-pulse mb-1"></div>
+                <div className="h-4 bg-gray-200 rounded w-48 animate-pulse"></div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="h-10 bg-gray-200 rounded w-48 animate-pulse"></div>
+              <div className="h-10 bg-gray-200 rounded w-48 animate-pulse"></div>
+            </div>
+          </div>
+
+          {/* KPI Cards Skeleton */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <SkeletonCard key={i} />
+            ))}
+          </div>
+
+          {/* Charts Skeleton */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2 mt-2">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <SkeletonChart key={i} />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const selectedSalesName = salesFilter === 'all' 
+    ? 'ทุกคน' 
+    : salesTeam.find(member => member.id.toString() === salesFilter)?.name || 'ไม่พบชื่อ';
+
+  // Memoize chart options to prevent unnecessary re-renders
+  const statusChartOption = useMemo(() => ({
+    tooltip: {
+      trigger: 'item',
+      formatter: function(params: any) {
+        return `
+          <div style="padding: 8px;">
+            <div style="font-weight: bold; color: #374151; margin-bottom: 4px;">${params.name}</div>
+            <div style="color: #6B7280; font-size: 12px;">จำนวน: ${params.value}</div>
+            <div style="color: #3B82F6; font-size: 12px;">สัดส่วน: ${params.percent.toFixed(1)}%</div>
+          </div>
+        `;
+      }
+    },
+    series: [
+      {
+        name: 'สถานะ Lead',
+        type: 'pie',
+        radius: ['45%', '75%'],
+        center: ['50%', '50%'],
+        data: dashboardData.statusData.map(item => ({
+          name: item.name,
+          value: item.value,
+          itemStyle: {
+            color: item.color
+          }
+        })),
+        label: {
+          show: true,
+          formatter: function(params: any) {
+            return `${params.name}\n${params.value} | ${params.percent.toFixed(1)}%`;
+          },
+          fontSize: 12,
+          fontWeight: 'bold',
+          color: '#374151'
+        },
+        labelLine: {
+          show: true,
+          length: 10,
+          length2: 10
+        },
+        emphasis: {
+          itemStyle: {
+            shadowBlur: 10,
+            shadowOffsetX: 0,
+            shadowColor: 'rgba(0, 0, 0, 0.5)'
+          }
+        },
+        animation: true,
+        animationDuration: 1000,
+        animationEasing: 'cubicOut'
+      }
+    ]
+  }), [dashboardData.statusData]);
+
+  const regionChartOption = useMemo(() => ({
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: {
+        type: 'shadow'
+      }
+    },
+    grid: {
+      left: '3%',
+      right: '4%',
+      bottom: '3%',
+      containLabel: true
+    },
+    xAxis: {
+      type: 'value',
+      name: 'จำนวน',
+      nameLocation: 'middle',
+      nameGap: 30,
+      axisLabel: {
+        fontSize: 12,
+        fontWeight: 'bold'
+      }
+    },
+    yAxis: {
+      type: 'category',
+      data: dashboardData.regionData.slice(0, 5).map(item => item.name),
+      axisLabel: {
+        fontSize: 12,
+        fontWeight: 'bold'
+      }
+    },
+    series: [
+      {
+        name: 'จำนวน',
+        type: 'bar',
+        data: dashboardData.regionData.slice(0, 5).map(item => item.value),
+        itemStyle: {
+          color: {
+            type: 'linear',
+            x: 0,
+            y: 0,
+            x2: 1,
+            y2: 0,
+            colorStops: [
+              { offset: 0, color: '#10B981' },
+              { offset: 1, color: '#059669' }
+            ]
+          },
+          borderRadius: [0, 4, 4, 0]
+        },
+        label: {
+          show: true,
+          position: 'right',
+          fontSize: 12,
+          fontWeight: 'bold',
+          color: '#374151'
+        },
+        emphasis: {
+          itemStyle: {
+            color: {
+              type: 'linear',
+              x: 0,
+              y: 0,
+              x2: 1,
+              y2: 0,
+              colorStops: [
+                { offset: 0, color: '#059669' },
+                { offset: 1, color: '#047857' }
+              ]
+            }
+          }
+        }
+      }
+    ],
+    animation: true,
+    animationDuration: 1000,
+    animationEasing: 'cubicOut'
+  }), [dashboardData.regionData]);
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-2">
+      <div className="w-full space-y-2">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <Package className="h-7 w-7 text-green-600" />
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">
+                Dashboard Package - {selectedSalesName}
+              </h1>
+              <p className="text-sm text-gray-600 mt-1">
+                {new Date().toLocaleDateString('th-TH', { 
+                  weekday: 'long', 
+                  year: 'numeric', 
+                  month: 'long', 
+                  day: 'numeric' 
+                })}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Select value={salesFilter} onValueChange={setSalesFilter}>
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="เลือก Sales" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">ทุกคน (รวม)</SelectItem>
+                {salesTeam.map(member => (
+                  <SelectItem key={member.id} value={member.id.toString()}>
+                    {member.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <DateRangePicker
+              value={dateRangeFilter}
+              onChange={setDateRangeFilter}
+              placeholder="เลือกช่วงเวลา"
+              presets={true}
+            />
+          </div>
+        </div>
+
+        {/* KPI Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 min-h-[120px]">
+          <Card className="bg-gradient-to-r from-green-50 to-emerald-50 border-green-200">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-semibold text-green-800">จำนวนลีดที่รับมา</CardTitle>
+              <Target className="h-5 w-5 text-green-600" />
+            </CardHeader>
+            <CardContent className="py-3">
+              <div className="text-2xl font-bold text-green-900">{dashboardData.totalProjects.toLocaleString()}</div>
+              <p className="text-sm font-medium text-green-700 mt-1">Projects</p>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gradient-to-r from-red-50 to-rose-50 border-red-200">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-semibold text-red-800">ยอดจำนวนการโทร/ติดตาม</CardTitle>
+              <Phone className="h-5 w-5 text-red-600" />
+            </CardHeader>
+            <CardContent className="py-3">
+              <div className="text-2xl font-bold text-red-900">{dashboardData.followUpCount.toLocaleString()}</div>
+              <p className="text-sm font-medium text-red-700 mt-1">Follow-ups</p>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gradient-to-r from-cyan-50 to-teal-50 border-cyan-200">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-semibold text-cyan-800">การนำเสนอ</CardTitle>
+              <Users className="h-5 w-5 text-cyan-600" />
+            </CardHeader>
+            <CardContent className="py-3">
+              <div className="flex justify-between items-center">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-cyan-900">{dashboardData.newCustomers}</div>
+                  <p className="text-sm font-medium text-cyan-700">ลูกค้าใหม่</p>
+                </div>
+                <div className="w-px h-10 bg-cyan-300"></div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-cyan-900">{dashboardData.existingCustomers}</div>
+                  <p className="text-sm font-medium text-cyan-700">ลูกค้าเดิม</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-semibold text-blue-800">โอกาส (Opportunity)</CardTitle>
+              <TrendingUp className="h-5 w-5 text-blue-600" />
+            </CardHeader>
+            <CardContent className="py-3">
+              <div className="text-2xl font-bold text-blue-900">฿{dashboardData.opportunityValue.toLocaleString()}</div>
+              <p className="text-sm font-medium text-blue-700 mt-1">Total Value</p>
+              <div className="text-xs text-blue-600 mt-1">
+                จาก {dashboardData.activeLeadsCount} ลีดที่ยังไม่ปิดการขาย
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gradient-to-r from-orange-50 to-yellow-50 border-orange-200">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-semibold text-orange-800">Win (ยอดขายปิดได้)</CardTitle>
+              <Package className="h-5 w-5 text-orange-600" />
+            </CardHeader>
+            <CardContent className="py-3">
+              <div className="text-2xl font-bold text-orange-900">฿{dashboardData.winValue.toLocaleString()}</div>
+              <p className="text-sm font-medium text-orange-700 mt-1">Closed Deals</p>
+              <div className="text-xs text-orange-600 mt-1">
+                จาก {dashboardData.totalActiveLeads} ลีดที่มีการอัพเดท
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gradient-to-r from-purple-50 to-pink-50 border-purple-200">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-semibold text-purple-800">% ปิด (Win Rate)</CardTitle>
+              <Zap className="h-5 w-5 text-purple-600" />
+            </CardHeader>
+            <CardContent className="py-3">
+              <div className="text-2xl font-bold text-purple-900">{dashboardData.winRate.toFixed(1)}%</div>
+              <p className="text-sm font-medium text-purple-700 mt-1">Conversion Rate</p>
+              <div className="text-xs text-purple-600 mt-1">
+                {dashboardData.winRate > 0 ? 'มีข้อมูล' : 'ไม่มีข้อมูล'}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Charts & Metrics: 2 rows, 4 columns each */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2 mt-2 min-w-0 min-h-[600px]">
+
+          <Card className="shadow-lg border-0 transition-transform hover:scale-[1.02] hover:shadow-xl bg-white">
+            <CardHeader className="pb-1">
+              <CardTitle className="text-sm">สถานะ Lead</CardTitle>
+            </CardHeader>
+            <CardContent className="py-6 flex items-center justify-center h-72">
+              <Suspense fallback={<div className="h-64 w-full bg-gray-200 rounded-lg animate-pulse"></div>}>
+                <ReactECharts
+                  option={statusChartOption}
+                  style={{ height: '240px', width: '100%' }}
+                  opts={{ renderer: 'svg' }}
+                />
+              </Suspense>
+            </CardContent>
+          </Card>
+
+          {/* Card โอกาสการขาย (SaleChanceChart) */}
+          {chartLoading ? (
+            <Card className="shadow-lg border-0 transition-transform hover:scale-[1.02] hover:shadow-xl bg-white min-w-0">
+              <CardContent className="py-6 flex items-center justify-center h-72 min-w-0">
+                <div className="animate-pulse min-w-0">
+                  <div className="h-64 bg-gray-200 rounded-lg min-w-0"></div>
+                </div>
+              </CardContent>
+            </Card>
+          ) : chartError ? (
+            <Card className="shadow-lg border-0 transition-transform hover:scale-[1.02] hover:shadow-xl bg-white min-w-0">
+              <CardHeader className="pb-1">
+                <CardTitle className="text-sm">โอกาสการขาย</CardTitle>
+              </CardHeader>
+              <CardContent className="py-6 flex items-center justify-center h-72 min-w-0">
+                <div className="text-center text-gray-500 min-w-0">
+                  <p>ไม่สามารถโหลดข้อมูลได้</p>
+                  <Button 
+                    onClick={refetchChart} 
+                    variant="outline" 
+                    size="sm" 
+                    className="mt-2"
+                  >
+                    ลองใหม่
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="shadow-lg border-0 transition-transform hover:scale-[1.02] hover:shadow-xl bg-white min-w-0">
+              <CardHeader className="pb-1">
+                <CardTitle className="text-sm">โอกาสการขาย</CardTitle>
+              </CardHeader>
+              <CardContent className="py-6 flex items-center justify-center h-72 min-w-0">
+                <SaleChanceChart saleChanceData={saleChanceData} />
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Card เมตริกเพิ่มเติม - MOVED TO REPLACE จังหวัด (Top 5) */}
+          <Card>
+            <CardHeader className="pb-1">
+              <CardTitle className="text-sm">เมตริกเพิ่มเติม</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 py-2">
+               <div className="flex flex-col gap-2">
+                <div 
+                  className="flex items-center justify-between p-2 bg-gray-50 rounded-lg cursor-pointer hover:bg-blue-50 transition-colors"
+                  onClick={() => handleMetricClick('appointment')}
+                >
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-5 w-5 text-blue-500" />
+                    <span className="font-medium text-xs">ทำนัด Field</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-base font-bold text-blue-600">
+                      {dashboardData.appointmentRate > 0 ? dashboardData.appointmentRate.toFixed(1) : '0.0'}%
+                    </span>
+                                      <div className="text-xs text-gray-500">
+                    {dashboardData.appointmentRate > 0 ? 'มีข้อมูล' : 'ไม่มีข้อมูล'}
+                  </div>
+                  <div className="text-xs text-gray-400">
+                    จาก {dashboardData.totalActiveLeads} ลีดที่มีการอัพเดท
+                  </div>
+                  </div>
+                </div>
+                <div 
+                  className="flex items-center justify-between p-2 bg-gray-50 rounded-lg cursor-pointer hover:bg-green-50 transition-colors"
+                  onClick={() => handleMetricClick('quotation')}
+                >
+                  <div className="flex items-center gap-2">
+                    <FileText className="h-5 w-5 text-green-500" />
+                    <span className="font-medium text-xs">ออก QT</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-base font-bold text-green-600">
+                      {dashboardData.quotationRate > 0 ? dashboardData.quotationRate.toFixed(1) : '0.0'}%
+                    </span>
+                    <div className="text-xs text-gray-500">
+                      {dashboardData.quotationRate > 0 ? 'มีข้อมูล' : 'ไม่มีข้อมูล'}
+                    </div>
+                    <div className="text-xs text-gray-400">
+                      จาก {dashboardData.totalActiveLeads} ลีดที่มีการอัพเดท
+                    </div>
+                  </div>
+                </div>
+                <div 
+                  className="flex items-center justify-between p-2 bg-gray-50 rounded-lg cursor-pointer hover:bg-purple-50 transition-colors"
+                  onClick={() => handleMetricClick('contactable')}
+                >
+                  <div className="flex items-center gap-2">
+                    <Users className="h-5 w-5 text-purple-500" />
+                    <span className="font-medium text-xs">ติดต่อได้</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-base font-bold text-purple-600">
+                      {dashboardData.contactableRate > 0 ? dashboardData.contactableRate.toFixed(1) : '0.0'}%
+                    </span>
+                                      <div className="text-xs text-gray-500">
+                    {dashboardData.contactableRate > 0 ? 'มีข้อมูล' : 'ไม่มีข้อมูล'}
+                  </div>
+                  <div className="text-xs text-gray-400">
+                    จาก {dashboardData.totalActiveLeads} ลีดที่มีการอัพเดท
+                  </div>
+                  </div>
+                </div>
+                <div 
+                  className="flex items-center justify-between p-2 bg-gray-50 rounded-lg cursor-pointer hover:bg-red-50 transition-colors"
+                  onClick={() => handleMetricClick('uncontactable')}
+                >
+                  <div className="flex items-center gap-2">
+                    <UserX className="h-5 w-5 text-red-500" />
+                    <span className="font-medium text-xs">ติดต่อไม่ได้</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-base font-bold text-red-600">
+                      {dashboardData.uncontactableRate > 0 ? dashboardData.uncontactableRate.toFixed(1) : '0.0'}%
+                    </span>
+                                      <div className="text-xs text-gray-500">
+                    {dashboardData.uncontactableRate > 0 ? 'มีข้อมูล' : 'ไม่มีข้อมูล'}
+                  </div>
+                  <div className="text-xs text-gray-400">
+                    จาก {dashboardData.totalActiveLeads} ลีดที่มีการอัพเดท
+                  </div>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <Zap className="h-5 w-5 text-orange-500" />
+                    <span className="font-medium text-xs">ความน่าสนใจเฉลี่ย</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-base font-bold text-orange-600">
+                      {dashboardData.averageHotness !== '0.0' ? dashboardData.averageHotness : '0.0'}
+                    </span>
+                    <div className="text-xs text-gray-500">
+                      {dashboardData.averageHotness !== '0.0' ? 'มีข้อมูล' : 'ไม่มีข้อมูล'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Card จังหวัด (Top 5) - MOVED TO REPLACE เมตริกเพิ่มเติม */}
+          <Card className="shadow-lg border-0 transition-transform hover:scale-[1.02] hover:shadow-xl bg-white">
+            <CardHeader className="pb-1">
+              <CardTitle className="text-sm">จังหวัด (Top 5)</CardTitle>
+            </CardHeader>
+            <CardContent className="py-6 flex items-center justify-center h-72">
+              <div className="h-60 w-full">
+                <Suspense fallback={<div className="h-60 w-full bg-gray-200 rounded-lg animate-pulse"></div>}>
+                  <ReactECharts
+                    option={regionChartOption}
+                    style={{ height: '240px', width: '100%' }}
+                    opts={{ renderer: 'svg' }}
+                  />
+                </Suspense>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Card ระดับความสนใจ - ADDED BACK */}
+          <Card className="shadow-lg border-0 transition-transform hover:scale-[1.02] hover:shadow-xl bg-white">
+            <CardHeader className="pb-1">
+              <CardTitle className="text-sm">ระดับความสนใจ</CardTitle>
+            </CardHeader>
+            <CardContent className="py-6 flex items-center justify-center h-72">
+              <Suspense fallback={<div className="h-64 w-full bg-gray-200 rounded-lg animate-pulse"></div>}>
+                <ReactECharts
+                option={{
+                  tooltip: {
+                    trigger: 'axis',
+                    axisPointer: {
+                      type: 'shadow'
+                    },
+                    formatter: function(params: any) {
+                      const data = params[0];
+                      return `
+                        <div style="padding: 8px;">
+                          <div style="font-weight: bold; color: #374151; margin-bottom: 4px;">${data.name}</div>
+                          <div style="color: #6B7280; font-size: 12px;">จำนวน: ${data.value}</div>
+                          <div style="color: #F59E0B; font-size: 12px;">ระดับความสนใจ</div>
+                        </div>
+                      `;
+                    }
+                  },
+                  grid: {
+                    left: '3%',
+                    right: '4%',
+                    bottom: '15%', // Increased to accommodate multi-line labels
+                    containLabel: true
+                  },
+                  xAxis: {
+                    type: 'category',
+                    data: dashboardData.hotnessData.map(item => item.name),
+                    axisLabel: {
+                      fontSize: 11,
+                      fontWeight: 'bold',
+                      interval: 0, // Show all labels
+                      rotate: 0, // No rotation
+                      margin: 16, // Increase margin for multi-line labels
+                      formatter: function(value: string) {
+                        return value.replace('\n', '\n'); // Ensure line breaks are preserved
+                      }
+                    },
+                    axisTick: {
+                      alignWithLabel: true
+                    }
+                  },
+                  yAxis: {
+                    type: 'value',
+                    axisLabel: {
+                      fontSize: 12,
+                      fontWeight: 'bold'
+                    }
+                  },
+                  series: [
+                    {
+                      name: 'จำนวน',
+                      type: 'bar',
+                      data: dashboardData.hotnessData.map(item => item.value),
+                      itemStyle: {
+                        color: function(params: any) {
+                          const colors = ['#EF4444', '#F59E0B', '#10B981']; // Red, Orange, Green
+                          return colors[params.dataIndex] || '#F59E0B';
+                        },
+                        borderRadius: [4, 4, 0, 0]
+                      },
+                      label: {
+                        show: true,
+                        position: 'top',
+                        fontSize: 12,
+                        fontWeight: 'bold',
+                        color: '#374151'
+                      },
+                      emphasis: {
+                        itemStyle: {
+                          color: function(params: any) {
+                            const colors = ['#D97706', '#B45309']; // Orange, Darker Orange
+                            return colors[params.dataIndex] || '#B45309';
+                          }
+                        }
+                      }
+                    }
+                  ],
+                  animation: true,
+                  animationDuration: 1000,
+                  animationEasing: 'cubicOut'
+                }}
+                style={{ height: '240px', width: '100%' }}
+                opts={{ renderer: 'svg' }}
+              />
+              </Suspense>
+            </CardContent>
+          </Card>
+
+          {/* Card วิธีการชำระเงิน - ADDED BACK */}
+          <Card className="shadow-lg border-0 transition-transform hover:scale-[1.02] hover:shadow-xl bg-white">
+            <CardHeader className="pb-1">
+              <CardTitle className="text-sm">วิธีการชำระเงิน</CardTitle>
+            </CardHeader>
+            <CardContent className="py-6 flex items-center justify-center h-72">
+              <Suspense fallback={<div className="h-64 w-full bg-gray-200 rounded-lg animate-pulse"></div>}>
+                <ReactECharts
+                option={{
+                  tooltip: {
+                    trigger: 'item',
+                    formatter: function(params: any) {
+                      return `
+                        <div style="padding: 8px;">
+                          <div style="font-weight: bold; color: #374151; margin-bottom: 4px;">${params.name}</div>
+                          <div style="color: #6B7280; font-size: 12px;">จำนวน: ${params.value}</div>
+                          <div style="color: #3B82F6; font-size: 12px;">สัดส่วน: ${params.percent.toFixed(1)}%</div>
+                        </div>
+                      `;
+                    }
+                  },
+                  series: [
+                    {
+                      name: 'วิธีการชำระเงิน',
+                      type: 'pie',
+                      radius: ['45%', '75%'], // Changed to doughnut chart
+                      center: ['50%', '50%'],
+                      data: dashboardData.paymentMethodData.map((item, index) => ({
+                        name: item.name,
+                        value: item.value,
+                        itemStyle: {
+                          color: ["#10B981", "#3B82F6"][index]
+                        }
+                      })),
+                      label: {
+                        show: true,
+                        formatter: function(params: any) {
+                          return `${params.name}\n${params.value} | ${params.percent.toFixed(1)}%`;
+                        },
+                        fontSize: 12,
+                        fontWeight: 'bold',
+                        color: '#374151'
+                      },
+                      labelLine: {
+                        show: true,
+                        length: 10,
+                        length2: 10
+                      },
+                      emphasis: {
+                        itemStyle: {
+                          shadowBlur: 10,
+                          shadowOffsetX: 0,
+                          shadowColor: 'rgba(0, 0, 0, 0.5)'
+                        }
+                      },
+                      animation: true,
+                      animationDuration: 1000,
+                      animationEasing: 'cubicOut'
+                    }
+                  ]
+                }}
+                style={{ height: '240px', width: '100%' }}
+                opts={{ renderer: 'svg' }}
+              />
+              </Suspense>
+            </CardContent>
+          </Card>
+
+          {/* Card Source (แหล่งที่มา) - MOVED TO REPLACE เมตริกเพิ่มเติม */}
+          <Card className="shadow-lg border-0 transition-transform hover:scale-[1.02] hover:shadow-xl bg-white">
+            <CardHeader className="pb-1">
+              <CardTitle className="text-sm">Source (แหล่งที่มา)</CardTitle>
+            </CardHeader>
+            <CardContent className="py-6 flex items-center justify-center h-72">
+              <Suspense fallback={<div className="h-64 w-full bg-gray-200 rounded-lg animate-pulse"></div>}>
+                <ReactECharts
+                option={{
+                  tooltip: {
+                    trigger: 'item',
+                    formatter: function(params: any) {
+                      return `
+                        <div style="padding: 8px;">
+                          <div style="font-weight: bold; color: #374151; margin-bottom: 4px;">${params.name}</div>
+                          <div style="color: #6B7280; font-size: 12px;">จำนวน: ${params.value}</div>
+                          <div style="color: #3B82F6; font-size: 12px;">สัดส่วน: ${params.percent.toFixed(1)}%</div>
+                        </div>
+                      `;
+                    }
+                  },
+                  series: [
+                    {
+                      name: 'แหล่งที่มา',
+                      type: 'pie',
+                      radius: ['45%', '75%'], // Changed to doughnut chart
+                      center: ['50%', '50%'],
+                      data: dashboardData.sourceData.map(item => ({
+                        name: item.name,
+                        value: item.value,
+                        itemStyle: {
+                          color: item.color
+                        }
+                      })),
+                      label: {
+                        show: true,
+                        formatter: function(params: any) {
+                          return `${params.name}\n${params.value} | ${params.percent.toFixed(1)}%`;
+                        },
+                        fontSize: 12,
+                        fontWeight: 'bold',
+                        color: '#374151'
+                      },
+                      labelLine: {
+                        show: true,
+                        length: 10,
+                        length2: 10
+                      },
+                      emphasis: {
+                        itemStyle: {
+                          shadowBlur: 10,
+                          shadowOffsetX: 0,
+                          shadowColor: 'rgba(0, 0, 0, 0.5)'
+                        }
+                      },
+                      animation: true,
+                      animationDuration: 1000,
+                      animationEasing: 'cubicOut'
+                    }
+                  ]
+                }}
+                style={{ height: '240px', width: '100%' }}
+                opts={{ renderer: 'svg' }}
+              />
+              </Suspense>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      {/* Modal for showing metric leads */}
+      <MetricLeadsDialog
+        isOpen={metricModalState.isOpen}
+        onClose={() => setMetricModalState(prev => ({ ...prev, isOpen: false }))}
+        title={metricModalState.title}
+        leads={metricModalState.leads}
+        metricType={metricModalState.metricType}
+      />
+    </div>
+  );
+};
+
+export default PackageDashboard;

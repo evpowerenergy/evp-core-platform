@@ -1,0 +1,48 @@
+flowchart LR
+  subgraph Client[Frontend]
+    UI[Pages/Components]
+    HooksAPI[Hooks API.ts - fetch /api]
+    HooksDB[Hooks Optimized.ts - Supabase direct]
+    UI --> HooksAPI
+    UI --> HooksDB
+  end
+
+  subgraph DevServer[Vite Dev Server]
+    VP[vite-plugin-api.ts - Middleware Router]
+    OpenAPIDocs[API Docs - /api-docs, swagger, redoc]
+  end
+
+  subgraph API[Local API Handlers]
+    Core[endpoints/core/*]
+    Additional[endpoints/additional/*]
+    System[endpoints/system/*]
+  end
+
+  subgraph Vercel[Vercel Production]
+    SPA[Rewrite to index.html]
+    Cron[Cron /api/keep-alive]
+    Headers[CSP & Security Headers]
+  end
+
+  subgraph Supabase[Supabase]
+    DB[(Postgres - Tables/Views/Triggers)]
+    REST[REST/RPC]
+    Realtime[Realtime]
+  end
+
+  HooksAPI --> VP
+  VP --> API
+  API --> REST
+
+  HooksDB --> REST
+  HooksDB --> Realtime
+
+  REST --> DB
+  Realtime --> UI
+
+  Client -.-> Vercel
+  Vercel --> SPA
+  UI -.-> REST
+  Vercel --> Headers
+  Vercel --> Cron
+

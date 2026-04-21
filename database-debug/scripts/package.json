@@ -1,0 +1,25 @@
+{
+  "name": "database-debug-scripts",
+  "version": "1.0.0",
+  "description": "Database debugging and analysis scripts for EV Power Energy CRM",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "search-customer": "node search-customer.js",
+    "analyze-structure": "node database-structure.js",
+    "analyze-database": "node analyze-database.js",
+    "debug-all": "npm run search-customer && npm run analyze-structure && npm run analyze-database"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.50.0"
+  },
+  "keywords": [
+    "database",
+    "debug",
+    "analysis",
+    "supabase",
+    "crm"
+  ],
+  "author": "EV Power Energy Team",
+  "license": "MIT"
+}

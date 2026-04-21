@@ -1,0 +1,59 @@
+name: Auto-Complete Service Visits
+
+# รันทุกวัน เวลา 00:05 (UTC+0) = 07:05 เวลาไทย
+on:
+  schedule:
+    - cron: '5 0 * * *'  # ทุกวัน 00:05 UTC
+  workflow_dispatch:  # สามารถรันด้วยมือได้
+
+jobs:
+  auto-complete:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Call Supabase Edge Function
+        run: |
+          response=$(curl -s -w "\n%{http_code}" -X POST \
+            "${{ secrets.SUPABASE_URL }}/functions/v1/auto-complete-services" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Content-Type: application/json")
+          
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | head -n-1)
+          
+          echo "Response: $body"
+          
+          if [ "$http_code" -ne 200 ]; then
+            echo "❌ Error: HTTP $http_code"
+            exit 1
+          fi
+          
+          echo "✅ Auto-complete service visits completed successfully"
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "❌ Auto-complete service visits failed!"
+          # เพิ่ม notification ถ้าต้องการ (Email, Slack, Line Notify, etc.)
+
+# =============================================================================
+# 📝 Setup Instructions
+# =============================================================================
+# 
+# 1. ไปที่ GitHub Repository Settings > Secrets and variables > Actions
+# 
+# 2. เพิ่ม Secrets:
+#    - SUPABASE_URL: https://YOUR_PROJECT_REF.supabase.co
+#    - SUPABASE_ANON_KEY: your_anon_key
+# 
+# 3. Commit และ push ไฟล์นี้
+# 
+# 4. ตรวจสอบว่า workflow ทำงาน:
+#    - ไปที่ Actions tab ใน GitHub
+#    - ดู workflow runs
+#    - หรือรันด้วยมือด้วยปุ่ม "Run workflow"
+# 
+# 5. Workflow จะรันอัตโนมัติทุกวัน เวลา 00:05 UTC (07:05 เวลาไทย)
+# 
+# =============================================================================
+
