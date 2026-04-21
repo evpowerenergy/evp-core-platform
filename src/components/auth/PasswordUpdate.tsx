@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Eye, EyeOff, Lock, Loader2, CheckCircle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/useToast';
+import { unlockRecoveryFlow } from '@/utils/recoveryFlow';
 
 const PasswordUpdate = () => {
   const [password, setPassword] = useState('');
@@ -63,6 +64,8 @@ const PasswordUpdate = () => {
           variant: "destructive",
         });
       } else {
+        unlockRecoveryFlow();
+        window.history.replaceState({}, '', '/auth');
         setUpdated(true);
         toast({
           title: "เปลี่ยนรหัสผ่านสำเร็จ! 🎉",
@@ -72,7 +75,7 @@ const PasswordUpdate = () => {
         
         // Redirect to index after 2 seconds
         setTimeout(() => {
-          navigate('/');
+          navigate('/backoffice', { replace: true });
         }, 2000);
       }
     } catch (error: any) {

@@ -4,19 +4,39 @@ import { User, Session } from "@supabase/supabase-js";
 import { useToast } from "@/hooks/useToast";
 import { SUPABASE_URL } from "@/config";
 import { getCachedSession, setCachedSession, clearCachedSession } from "@/utils/sessionCache";
+import {
+  getRecoveryFlowEventName,
+  getRecoveryFlowLockKey,
+  isRecoveryFlowLocked,
+  isRecoveryTypeInUrl,
+  lockRecoveryFlow,
+  unlockRecoveryFlow,
+} from "@/utils/recoveryFlow";
 
 export const useAuth = () => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [signingOut, setSigningOut] = useState(false);
+  const [isRecoveryMode, setIsRecoveryMode] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
     let mounted = true;
+    const syncRecoveryMode = () => {
+      const locked = isRecoveryFlowLocked();
+      if (mounted) {
+        setIsRecoveryMode(locked);
+      }
+    };
 
     const initializeAuth = async () => {
       try {
+        if (isRecoveryTypeInUrl()) {
+          lockRecoveryFlow();
+        }
+        syncRecoveryMode();
+
         // ✅ ใช้ cached session ก่อนเพื่อลดการเรียก API
         const cached = getCachedSession();
         if (cached) {
@@ -152,6 +172,11 @@ export const useAuth = () => {
         }
 
         // Handle different auth events
+        const recoveryStillLocked = isRecoveryFlowLocked();
+        if (!recoveryStillLocked && event !== 'PASSWORD_RECOVERY') {
+          setIsRecoveryMode(false);
+        }
+
         if (event === 'SIGNED_OUT') {
   
           // Clear saved credentials on sign out
@@ -159,6 +184,8 @@ export const useAuth = () => {
           localStorage.removeItem('saved_password');
           localStorage.removeItem('remember_me');
           clearCachedSession();
+          unlockRecoveryFlow();
+          setIsRecoveryMode(false);
           
           // Ensure local state is cleared
           if (mounted) {
@@ -180,13 +207,35 @@ export const useAuth = () => {
             setCachedSession(session);
           }
         }
+
+        if (event === 'PASSWORD_RECOVERY') {
+          lockRecoveryFlow();
+          syncRecoveryMode();
+        }
+
+        if (event === 'USER_UPDATED') {
+          syncRecoveryMode();
+        }
       }
     );
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === getRecoveryFlowLockKey()) {
+        syncRecoveryMode();
+      }
+    };
+    const handleRecoveryFlowChange = () => {
+      syncRecoveryMode();
+    };
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener(getRecoveryFlowEventName(), handleRecoveryFlowChange);
 
     initializeAuth();
 
     return () => {
       mounted = false;
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener(getRecoveryFlowEventName(), handleRecoveryFlowChange);
       subscription.unsubscribe();
     };
   }, [toast]);
@@ -273,5 +322,7 @@ export const useAuth = () => {
     loading,
     signingOut,
     signOut
+    ,
+    isRecoveryMode
   };
 };

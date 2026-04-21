@@ -171,7 +171,8 @@ const queryClient = new QueryClient({
 });
 
 function AppContent() {
-  const { user, loading } = useAuth();
+  const { user, loading, isRecoveryMode } = useAuth();
+  const forceRecoveryRoute = !!user && isRecoveryMode;
 
   // ปิด client-side keep-alive service เพื่อลดการซ้ำซ้อน
   // ใช้ Vercel cron job และ Uptime Robot แทน
@@ -204,18 +205,25 @@ function AppContent() {
           <Suspense fallback={<PageLoader />}>
             <Routes>
             <Route path="/" element={
-              !user ? <Navigate to="/auth" /> : 
+              !user ? <Navigate to="/auth" /> :
+              forceRecoveryRoute ? <Navigate to="/auth?type=recovery" replace /> :
               <CRMOnlyRouteNew>
                 <Index />
               </CRMOnlyRouteNew>
             } />
-            <Route path="/auth" element={!user ? <Auth /> : <Navigate to="/backoffice" />} />
-            <Route path="/quotation" element={!user ? <Navigate to="/auth" /> : <QuotationPage />} />
-            <Route path="/backoffice" element={!user ? <Navigate to="/auth" /> : <BackofficePortal />} />
-            <Route path="/executive-dashboard" element={!user ? <Navigate to="/auth" /> : <ExecutiveDashboard />} />
+            <Route
+              path="/auth"
+              element={!user || isRecoveryMode ? <Auth /> : <Navigate to="/backoffice" />}
+            />
+            <Route path="/quotation" element={!user ? <Navigate to="/auth" /> : forceRecoveryRoute ? <Navigate to="/auth?type=recovery" replace /> : <QuotationPage />} />
+            <Route path="/backoffice" element={!user ? <Navigate to="/auth" /> : forceRecoveryRoute ? <Navigate to="/auth?type=recovery" replace /> : <BackofficePortal />} />
+            <Route path="/executive-dashboard" element={!user ? <Navigate to="/auth" /> : forceRecoveryRoute ? <Navigate to="/auth?type=recovery" replace /> : <ExecutiveDashboard />} />
             
             {/* Protected Routes */}
             {user ? (
+              forceRecoveryRoute ? (
+                <Route path="*" element={<Navigate to="/auth?type=recovery" replace />} />
+              ) : (
               <>
                 {/* Sales Features - All sales roles can access (including admin_page) */}
                 <Route path="/leads/add" element={
@@ -566,6 +574,7 @@ function AppContent() {
                   </AllRolesRoute>
                 } />
               </>
+              )
             ) : (
               <Route path="*" element={<Navigate to="/auth" />} />
             )}
