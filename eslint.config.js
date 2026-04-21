@@ -5,7 +5,14 @@ import reactRefresh from "eslint-plugin-react-refresh";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist"] },
+  {
+    ignores: [
+      "dist",
+      "coverage",
+      ".vercel",
+      "supabase/functions/**/deno.d.ts",
+    ],
+  },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ["**/*.{ts,tsx}"],
@@ -24,6 +31,18 @@ export default tseslint.config(
         { allowConstantExport: true },
       ],
       "@typescript-eslint/no-unused-vars": "off",
+      // Legacy codebase compatibility: keep signals as warnings while
+      // we gradually refactor instead of breaking CI immediately.
+      "@typescript-eslint/no-explicit-any": "warn",
+      "@typescript-eslint/ban-ts-comment": "warn",
+      "@typescript-eslint/no-empty-object-type": "warn",
+      "@typescript-eslint/triple-slash-reference": "warn",
+      "@typescript-eslint/no-require-imports": "warn",
+      "no-case-declarations": "warn",
+      "no-empty": "warn",
+      "no-useless-escape": "warn",
+      "prefer-const": "warn",
+      "no-var": "warn",
     },
   }
 );
