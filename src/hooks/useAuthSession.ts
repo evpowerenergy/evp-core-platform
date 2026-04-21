@@ -31,6 +31,7 @@ export const useAuthSession = () => {
         // Check URL parameters first (both query and hash fragment from Supabase links)
         const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
         const type = searchParams.get('type') || hashParams.get('type');
+        const tokenHash = searchParams.get('token_hash') || hashParams.get('token_hash');
         if (type === 'recovery') {
           lockRecoveryFlow();
           isRecoveryFlowRef.current = true;
@@ -61,6 +62,27 @@ export const useAuthSession = () => {
             setLoading(false);
           }
           return;
+        }
+
+        // Some recovery links provide token_hash and may not auto-create session
+        // (e.g. when opened in a different browser context). Verify it explicitly.
+        if (type === 'recovery' && tokenHash) {
+          const { error: verifyError } = await supabase.auth.verifyOtp({
+            type: 'recovery',
+            token_hash: tokenHash,
+          });
+
+          if (verifyError) {
+            toast({
+              title: "ลิงก์รีเซ็ตรหัสผ่านไม่ถูกต้อง",
+              description: verifyError.message,
+              variant: "destructive",
+            });
+          } else {
+            lockRecoveryFlow();
+            isRecoveryFlowRef.current = true;
+            setShowPasswordUpdate(true);
+          }
         }
 
         // Get initial session
