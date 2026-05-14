@@ -8,6 +8,7 @@ import { DateRange } from "react-day-picker";
 import QuotationSearchDialog from "./QuotationSearchDialog";
 import { PLATFORM_OPTIONS } from "@/utils/dashboardUtils";
 import { getOperationStatusColor, OPERATION_STATUS_OPTIONS } from "@/utils/leadStatusUtils";
+import type { ElectricityBillFilterBucket } from "@/utils/electricityBillFilter";
 
 interface LeadTableHeaderProps {
   statusFilter: string;
@@ -26,6 +27,9 @@ interface LeadTableHeaderProps {
   setCategoryFilter?: (value: string) => void;
   ppaFilter?: string; // เพิ่ม prop สำหรับ PPA filter
   setPpaFilter?: (value: string) => void;
+  /** กรองตาม `avg_electricity_bill` — แสดง UI เมื่อส่ง `setElectricityBillFilter` */
+  electricityBillFilter?: ElectricityBillFilterBucket;
+  setElectricityBillFilter?: (value: ElectricityBillFilterBucket) => void;
   hideStatusFilters?: boolean; // เพิ่ม prop สำหรับซ่อน filter สถานะ
   isMyLeads?: boolean; // เพิ่ม prop เพื่อแสดง call status filter เฉพาะหน้า MyLeads
 }
@@ -47,6 +51,8 @@ const LeadTableHeader = ({
   setCategoryFilter,
   ppaFilter = 'all',
   setPpaFilter = () => {},
+  electricityBillFilter = 'all',
+  setElectricityBillFilter,
   hideStatusFilters = false,
   isMyLeads = false,
 }: LeadTableHeaderProps) => {
@@ -199,6 +205,28 @@ const LeadTableHeader = ({
             </SelectContent>
           </Select>
         </div>
+
+        {setElectricityBillFilter && (
+          <div className="min-w-[160px] lg:w-52">
+            <Select
+              value={electricityBillFilter}
+              onValueChange={(v) => setElectricityBillFilter(v as ElectricityBillFilterBucket)}
+            >
+              <SelectTrigger className="bg-white/90 backdrop-blur-sm border-2 border-gray-200/60 shadow-md hover:shadow-lg focus:shadow-xl focus:border-green-300 focus:ring-2 focus:ring-green-200/50 transition-all duration-300 hover:scale-[1.02] focus:scale-[1.02] group-hover:border-green-200">
+                <Filter className="h-4 w-4 mr-2 text-gray-500" />
+                <SelectValue placeholder="ค่าไฟเฉลี่ย/เดือน" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">ค่าไฟ — ทั้งหมด</SelectItem>
+                <SelectItem value="unknown">ไม่ระบุค่าไฟ</SelectItem>
+                <SelectItem value="lt_2000">ต่ำกว่า 2,000 บาท</SelectItem>
+                <SelectItem value="2000_5000">2,000 – 4,999 บาท</SelectItem>
+                <SelectItem value="5000_10000">5,000 – 9,999 บาท</SelectItem>
+                <SelectItem value="gte_10000">10,000 บาทขึ้นไป</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
       </div>
     </div>

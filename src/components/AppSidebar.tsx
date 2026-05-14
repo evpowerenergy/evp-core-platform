@@ -13,7 +13,8 @@ import {
   FileText,
   Lock,
   ArrowLeft,
-  XCircle
+  XCircle,
+  Search,
 } from "lucide-react";
 import { usePermissions } from "@/hooks/usePermissions";
 import { Button } from "@/components/ui/button";
@@ -101,10 +102,23 @@ export function AppSidebar() {
 
   const reportSubItems: MenuItem[] = [
     {
-      title: "ลีด เเอดมิน",
-      url: "/reports/all-leads",
+      title: "ลีด แอดมิน",
       icon: Users,
       requiredPermission: () => permissions.canAccessAllFeatures,
+      items: [
+        {
+          title: "รายงานลีดทั้งหมด",
+          url: "/reports/all-leads",
+          icon: BarChart3,
+          requiredPermission: () => permissions.canAccessAllFeatures,
+        },
+        {
+          title: "ค้นหาและจัดการลีด",
+          url: "/leads/admin-search",
+          icon: Search,
+          requiredPermission: () => permissions.canAccessAllFeatures,
+        },
+      ],
     },
     {
       title: "Package Sales",

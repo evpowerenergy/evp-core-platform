@@ -27,12 +27,14 @@ import { PageLoading } from "@/components/ui/loading";
 // import StatusChart from "@/components/dashboard/StatusChart";
 // import PlatformChart from "@/components/dashboard/PlatformChart";
 import { calculateStats, prepareChartData } from "@/utils/dashboardUtils";
+import { matchesElectricityBillFilter, type ElectricityBillFilterBucket } from "@/utils/electricityBillFilter";
 
 const LeadManagement = () => {
   const [platformFilter, setPlatformFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [dateRangeFilter, setDateRangeFilter] = useState<DateRange | undefined>(undefined);
   const [ppaFilter, setPpaFilter] = useState("all");
+  const [electricityBillFilter, setElectricityBillFilter] = useState<ElectricityBillFilterBucket>("all");
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -172,11 +174,16 @@ const LeadManagement = () => {
         lead.region?.toLowerCase().includes(searchTerm.toLowerCase());
       
       const matchesDate = checkDateRange(lead.created_at_thai);
+
+      const matchesElectricityBill = matchesElectricityBillFilter(
+        lead.avg_electricity_bill,
+        electricityBillFilter
+      );
       
       // ยังไม่ถูกรับไป และผ่านเงื่อนไขอื่นๆ ทั้งหมด
-      return isUnassigned && matchesPlatform && matchesPpa && matchesSearch && matchesDate;
+      return isUnassigned && matchesPlatform && matchesPpa && matchesSearch && matchesDate && matchesElectricityBill;
     });
-  }, [leads, platformFilter, ppaFilter, searchTerm, dateRangeFilter]);
+  }, [leads, platformFilter, ppaFilter, searchTerm, dateRangeFilter, electricityBillFilter]);
 
   // Handle accept lead
   const handleAcceptLead = async (leadId: number) => {
@@ -312,6 +319,8 @@ const LeadManagement = () => {
           setPlatformFilter={setPlatformFilter}
           ppaFilter={ppaFilter}
           setPpaFilter={setPpaFilter}
+          electricityBillFilter={electricityBillFilter}
+          setElectricityBillFilter={setElectricityBillFilter}
           searchTerm={searchTerm}
           setSearchTerm={setSearchTerm}
           dateRangeFilter={dateRangeFilter}

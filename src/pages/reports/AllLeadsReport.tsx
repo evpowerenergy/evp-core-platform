@@ -22,6 +22,8 @@ import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { getOperationStatusColor } from "@/utils/leadStatusUtils";
 import { PLATFORM_OPTIONS } from "@/utils/dashboardUtils";
 import { normalizePhoneNumber } from "@/utils/leadValidation";
+import { deleteLeadViaEdgeFunction } from '@/lib/leads/deleteLead';
+import { fetchAllLeadsTableWithLogs } from '@/lib/leads/fetchAllLeadsTable';
 
 const AllLeadsReport = () => {
   // State for table pagination
@@ -107,52 +109,18 @@ const AllLeadsReport = () => {
     return mapping;
   }, [creators]);
 
-  // ✅ Handle delete lead using Edge Function
   const handleDeleteLead = async (leadId: number) => {
-    if (window.confirm('คุณต้องการลบลีดนี้ใช่หรือไม่? การดำเนินการนี้ไม่สามารถยกเลิกได้')) {
-      try {
-        // Get JWT token from Supabase session for Edge Function
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token;
-        
-        if (!token) {
-          throw new Error('No authentication token available');
-        }
-
-        // Call Supabase Edge Function
-        const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://ttfjapfdzrxmbxbarfbn.supabase.co';
-        const edgeFunctionUrl = `${SUPABASE_URL}/functions/v1/core-leads-lead-mutations`;
-        
-        const response = await fetch(edgeFunctionUrl, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            action: 'delete_lead',
-            leadId: leadId
-          }),
-        });
-        
-        if (!response.ok) {
-          throw new Error('Failed to delete lead');
-        }
-        
-        const result = await response.json();
-        
-        if (!result.success) {
-          throw new Error(result.error || 'Failed to delete lead');
-        }
-
-        alert('ลบลีดสำเร็จ');
-        // รีเฟรชข้อมูล
-        fetchTableLeads(currentPage);
-        fetchChartLeads();
-      } catch (error: any) {
-        console.error('Error deleting lead:', error);
-        alert('เกิดข้อผิดพลาดในการลบลีด: ' + (error.message || 'Unknown error'));
-      }
+    if (!window.confirm('คุณต้องการลบลีดนี้ใช่หรือไม่? การดำเนินการนี้ไม่สามารถยกเลิกได้')) {
+      return;
+    }
+    try {
+      await deleteLeadViaEdgeFunction(leadId);
+      alert('ลบลีดสำเร็จ');
+      fetchTableLeads(currentPage);
+      fetchChartLeads();
+    } catch (error: any) {
+      console.error('Error deleting lead:', error);
+      alert('เกิดข้อผิดพลาดในการลบลีด: ' + (error.message || 'Unknown error'));
     }
   };
 
@@ -162,191 +130,44 @@ const AllLeadsReport = () => {
     window.location.href = `/leads/${leadId}`;
   };
 
-  // ✅ Fetch table data using Edge Function (all filtered data, paginated in frontend)
   const fetchTableLeads = async (page: number) => {
     setTableLoading(true);
     try {
-      // Get JWT token from Supabase session for Edge Function
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      
-      if (!token) {
-        throw new Error('No authentication token available');
-      }
-
-      // Build query parameters
-      const params = new URLSearchParams();
-      params.append('type', 'table');
-      
-      if (statusFilter !== 'all') {
-        params.append('status', statusFilter);
-      }
-      
-      if (operationStatusFilter !== 'all') {
-        params.append('operation_status', operationStatusFilter);
-      }
-      
-      if (platformFilter !== 'all') {
-        params.append('platform', platformFilter);
-      }
-      
-      if (categoryFilter !== 'all') {
-        params.append('category', categoryFilter);
-      }
-      
-      if (creatorFilter !== 'all') {
-        params.append('creator', creatorFilter);
-      }
-      
-      if (searchTerm !== '') {
-        params.append('search', searchTerm);
-      }
-
-      // Apply date range filter
-      if (dateRangeFilter && dateRangeFilter.from) {
-        const fromDate = dateRangeFilter.from;
-        const toDate = dateRangeFilter.to || dateRangeFilter.from;
-        
-        // Use Intl.DateTimeFormat with Thailand timezone to get correct dates
-        const formatter = new Intl.DateTimeFormat('sv-SE', {
-          timeZone: 'Asia/Bangkok',
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit'
-        });
-        
-        // Format start date - Start from 00:00:00 Thai time
-        const startDateString = formatter.format(fromDate);
-        const startString = startDateString + 'T00:00:00.000';
-        
-        // Format end date - End at 23:59:59 Thai time
-        const endDateString = formatter.format(toDate);
-        const endString = endDateString + 'T23:59:59.999';
-        
-        params.append('from', startString);
-        params.append('to', endString);
-      }
-
-      // Call Supabase Edge Function
-      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://ttfjapfdzrxmbxbarfbn.supabase.co';
-      const edgeFunctionUrl = `${SUPABASE_URL}/functions/v1/core-leads-all-leads-report?${params.toString()}`;
-      
-      const response = await fetch(edgeFunctionUrl, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
+      const leads = await fetchAllLeadsTableWithLogs(
+        {
+          statusFilter,
+          operationStatusFilter,
+          platformFilter,
+          categoryFilter,
+          creatorFilter,
+          searchTerm,
+          dateRangeFilter,
         },
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch leads for table');
-      }
-      
-      const result = await response.json();
-      
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to fetch leads for table');
-      }
+        getCreatorName
+      );
 
-      const data = result.data || [];
-      
-      // Debug: แสดงจำนวนลีดตาม category และตรวจสอบ is_from_ppa_project
-      if (data && data.length > 0) {
-        const categoryCounts = data.reduce((acc: any, lead: any) => {
+      if (leads && leads.length > 0) {
+        const categoryCounts = leads.reduce((acc: any, lead: any) => {
           const category = lead.category || 'ไม่มี category';
           acc[category] = (acc[category] || 0) + 1;
           return acc;
         }, {});
-        
-        // Check if is_from_ppa_project field exists
-        const sampleLead = data[0];
+
+        const sampleLead = leads[0];
         const hasPpaField = 'is_from_ppa_project' in sampleLead;
-        const ppaLeadsCount = data.filter((lead: any) => lead.is_from_ppa_project === true).length;
-        
+        const ppaLeadsCount = leads.filter((lead: any) => lead.is_from_ppa_project === true).length;
+
         console.log('📊 AllLeadsReport Debug:', {
-          totalLeadsFromQuery: data.length,
+          totalLeadsFromQuery: leads.length,
           categoryCounts: categoryCounts,
           hasPpaField: hasPpaField,
           ppaLeadsCount: ppaLeadsCount,
           sampleLeadFields: Object.keys(sampleLead || {}),
-          sampleLeadPpaValue: sampleLead?.is_from_ppa_project
+          sampleLeadPpaValue: sampleLead?.is_from_ppa_project,
         });
       }
 
-      
-      // Get latest productivity log for each lead
-      // ✅ แก้ไข: แบ่ง leadIds เป็น chunks เพื่อหลีกเลี่ยง URL ยาวเกินไปหรือเกิน limit ของ PostgREST
-      if (data && data.length > 0) {
-        const leadIds = data.map(lead => lead.id);
-        
-        if (leadIds.length > 0) {
-          // แบ่ง leadIds เป็น chunks ละ 500 items (PostgREST limit)
-          const CHUNK_SIZE = 500;
-          const chunks: number[][] = [];
-          for (let i = 0; i < leadIds.length; i += CHUNK_SIZE) {
-            chunks.push(leadIds.slice(i, i + CHUNK_SIZE));
-          }
-
-          // Query productivity logs แบบ parallel สำหรับแต่ละ chunk
-          const productivityLogsPromises = chunks.map(chunk =>
-            supabase
-              .from('lead_productivity_logs')
-              .select(`
-                id,
-                lead_id,
-                note,
-                status,
-                created_at_thai
-              `)
-              .in('lead_id', chunk)
-              .order('created_at_thai', { ascending: false })
-          );
-
-          const productivityLogsResults = await Promise.all(productivityLogsPromises);
-          
-          // รวมผลลัพธ์จากทุก chunks
-          let allProductivityLogs: any[] = [];
-          let hasError = false;
-          
-          productivityLogsResults.forEach((result, index) => {
-            if (result.error) {
-              console.error(`Error fetching productivity logs for chunk ${index}:`, result.error);
-              hasError = true;
-            } else if (result.data) {
-              allProductivityLogs = [...allProductivityLogs, ...result.data];
-            }
-          });
-
-          if (!hasError && allProductivityLogs.length > 0) {
-            // สร้าง map ของ productivity log ล่าสุดสำหรับแต่ละ lead
-            const latestLogsMap = new Map();
-            allProductivityLogs.forEach(log => {
-              if (!latestLogsMap.has(log.lead_id)) {
-                latestLogsMap.set(log.lead_id, log);
-              } else {
-                // ถ้ามี log เก่ากว่า ใช้ log ที่ใหม่กว่า
-                const existingLog = latestLogsMap.get(log.lead_id);
-                if (new Date(log.created_at_thai) > new Date(existingLog.created_at_thai)) {
-                  latestLogsMap.set(log.lead_id, log);
-                }
-              }
-            });
-
-            // เพิ่มข้อมูล productivity log ล่าสุดให้กับแต่ละ lead
-            data.forEach(lead => {
-              const latestLog = latestLogsMap.get(lead.id);
-              (lead as any).latest_productivity_log = latestLog || null;
-            });
-          }
-        }
-      }
-
-      // No need for frontend date filtering - backend query already gets correct data
-      const leadsWithCreatorNames = (data || []).map(lead => ({
-        ...lead,
-        creator_name: getCreatorName(lead.created_by)
-      }));
-      setTableLeads(leadsWithCreatorNames);
+      setTableLeads(leads);
     } catch (error) {
       console.error('Error:', error);
     } finally {

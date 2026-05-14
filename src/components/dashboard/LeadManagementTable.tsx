@@ -9,6 +9,7 @@ import LeadTableRow from "./LeadTableRow";
 import Pagination from "@/components/ui/pagination";
 import { DateRange } from "react-day-picker";
 import { ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { matchesElectricityBillFilter, type ElectricityBillFilterBucket } from "@/utils/electricityBillFilter";
 
 interface LeadManagementTableProps {
   leads: any[];
@@ -46,6 +47,9 @@ interface LeadManagementTableProps {
   setCategoryFilter?: (value: string) => void; // เพิ่มกลับมาเพื่อรองรับ AllLeadsReport
   ppaFilter?: string; // เพิ่ม prop สำหรับ PPA filter
   setPpaFilter?: (value: string) => void; // เพิ่ม prop สำหรับ set PPA filter
+  /** กรองจาก `avg_electricity_bill` — ส่ง `setElectricityBillFilter` เพื่อแสดงตัวเลือกใน header */
+  electricityBillFilter?: ElectricityBillFilterBucket;
+  setElectricityBillFilter?: (value: ElectricityBillFilterBucket) => void;
   creatorNames?: { [key: string]: string }; // เพิ่ม prop สำหรับชื่อผู้ที่เพิ่มลีด
   dateField?: 'created_at_thai' | 'updated_at_thai'; // เพิ่ม prop สำหรับระบุ field ที่ใช้ในการกรองวันที่
   // Pagination props
@@ -92,6 +96,8 @@ const LeadManagementTable = ({
   setCategoryFilter = () => {}, // เพิ่มกลับมาเพื่อรองรับ AllLeadsReport
   ppaFilter = 'all', // เพิ่ม default
   setPpaFilter = () => {}, // เพิ่ม default
+  electricityBillFilter = 'all',
+  setElectricityBillFilter,
   creatorNames = {}, // เพิ่ม default
   dateField = 'created_at_thai', // เพิ่ม default
   // Pagination props with defaults
@@ -112,7 +118,8 @@ const LeadManagementTable = ({
     categoryFilter,
     callStatusFilter,
     searchTerm,
-    dateRangeFilter
+    dateRangeFilter,
+    electricityBillFilter,
   });
 
   const handleSortDateClick = () => {
@@ -138,7 +145,8 @@ const LeadManagementTable = ({
       categoryFilter,
       callStatusFilter,
       searchTerm,
-      dateRangeFilter
+      dateRangeFilter,
+      electricityBillFilter,
     };
     
     const prevFilters = prevFiltersRef.current;
@@ -150,7 +158,7 @@ const LeadManagementTable = ({
        // Update ref with current filters
        prevFiltersRef.current = currentFilters;
      }
-  }, [statusFilter, operationStatusFilter, platformFilter, categoryFilter, callStatusFilter, searchTerm, dateRangeFilter, currentPage, onPageChange]);
+  }, [statusFilter, operationStatusFilter, platformFilter, categoryFilter, callStatusFilter, searchTerm, dateRangeFilter, electricityBillFilter, currentPage, onPageChange]);
 
   // Filter leads - ข้ามการ filter ถ้าข้อมูลถูก filter แล้ว
   const filteredLeads = useMemo(() => {
@@ -184,8 +192,13 @@ const LeadManagementTable = ({
         const matchesPpa = ppaFilter === "all" || 
           (ppaFilter === "ppa" && lead.is_from_ppa_project === true) ||
           (ppaFilter === "non_ppa" && (lead.is_from_ppa_project === false || !lead.is_from_ppa_project));
+
+        const matchesElectricityBill = matchesElectricityBillFilter(
+          lead.avg_electricity_bill,
+          electricityBillFilter
+        );
         
-        return matchesSearch && matchesCallStatus && matchesPpa;
+        return matchesSearch && matchesCallStatus && matchesPpa && matchesElectricityBill;
       });
       
       // Sort by updated_at_thai (latest first) for MyLeads pages
@@ -227,8 +240,13 @@ const LeadManagementTable = ({
         const matchesCallStatus = callStatusFilter === "all" || 
           (callStatusFilter === "called" && lead.latest_productivity_log) ||
           (callStatusFilter === "not_called" && !lead.latest_productivity_log);
+
+        const matchesElectricityBill = matchesElectricityBillFilter(
+          lead.avg_electricity_bill,
+          electricityBillFilter
+        );
         
-        return matchesStatus && matchesOperationStatus && matchesPlatform && matchesCategory && matchesPpa && matchesSearch && matchesDate && matchesCallStatus;
+        return matchesStatus && matchesOperationStatus && matchesPlatform && matchesCategory && matchesPpa && matchesSearch && matchesDate && matchesCallStatus && matchesElectricityBill;
       });
       
               // Sort by updated_at_thai (latest first) for MyLeads pages
@@ -242,7 +260,7 @@ const LeadManagementTable = ({
       
       return filtered;
     }
-  }, [leads, statusFilter, operationStatusFilter, platformFilter, categoryFilter, ppaFilter, callStatusFilter, searchTerm, dateRangeFilter, preFiltered, isMyLeads, dateField]);
+  }, [leads, statusFilter, operationStatusFilter, platformFilter, categoryFilter, ppaFilter, callStatusFilter, searchTerm, dateRangeFilter, electricityBillFilter, preFiltered, isMyLeads, dateField]);
 
   // Apply sort by date (in/out time) when sortDateOrder is set
   const sortedLeads = useMemo(() => {
@@ -258,7 +276,7 @@ const LeadManagementTable = ({
   }, [filteredLeads, sortDateOrder, dateField]);
 
   // Calculate total pages for pagination - use filtered count when filters are applied
-  const hasActiveFilters = statusFilter !== "all" || operationStatusFilter !== "all" || platformFilter !== "all" || callStatusFilter !== "all" || searchTerm !== "" || dateRangeFilter !== undefined;
+  const hasActiveFilters = statusFilter !== "all" || operationStatusFilter !== "all" || platformFilter !== "all" || callStatusFilter !== "all" || searchTerm !== "" || dateRangeFilter !== undefined || electricityBillFilter !== "all";
   const effectiveTotalCount = preFiltered
     ? sortedLeads.length
     : hasActiveFilters
@@ -314,6 +332,8 @@ const LeadManagementTable = ({
               setCategoryFilter={setCategoryFilter}
               ppaFilter={ppaFilter}
               setPpaFilter={setPpaFilter}
+              electricityBillFilter={electricityBillFilter}
+              setElectricityBillFilter={setElectricityBillFilter}
               hideStatusFilters={hideStatusFilters}
               isMyLeads={isMyLeads}
             />

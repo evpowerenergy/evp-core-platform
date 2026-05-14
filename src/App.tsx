@@ -27,6 +27,7 @@ const Auth = lazy(() => import("./pages/Auth"));
 const LeadAdd = lazy(() => import("./pages/LeadAdd"));
 const LeadDetail = lazy(() => import("./pages/LeadDetail"));
 const LeadTimeline = lazy(() => import("./pages/LeadTimeline"));
+const LeadAdminSearch = lazy(() => import("./pages/leads/LeadAdminSearch"));
 const ProductivityLogAdd = lazy(() => import("./pages/ProductivityLogAdd"));
 const MyLeads = lazy(() => import("./pages/MyLeads"));
 const MyAppointments = lazy(() => import("./pages/MyAppointments"));
@@ -235,6 +236,11 @@ function AppContent() {
                   <SalesOnlyRoute>
                     <AppLayout><LeadAdd /></AppLayout>
                   </SalesOnlyRoute>
+                } />
+                <Route path="/leads/admin-search" element={
+                  <ProtectedRoute requiredRoles={['super_admin', 'manager_sale', 'manager_marketing', 'manager_hr', 'admin_page', 'marketing', 'sale_package']}>
+                    <AppLayout><LeadAdminSearch /></AppLayout>
+                  </ProtectedRoute>
                 } />
                 
                 {/* Package Routes - Only package sales can access */}
