@@ -43,6 +43,28 @@ echo "🖼  Image:  $IMAGE"
 echo "🚀 Service: $SERVICE_NAME"
 echo ""
 
+# Resolve gcloud (บาง shell เช่นใน IDE ไม่โหลด PATH ของ Cloud SDK)
+if [[ -n "${GCLOUD_BIN:-}" && -x "${GCLOUD_BIN}" ]]; then
+  export PATH="$(dirname "${GCLOUD_BIN}"):${PATH}"
+elif ! command -v gcloud &>/dev/null; then
+  for _g in \
+    "${HOME}/google-cloud-sdk/bin/gcloud" \
+    "/opt/homebrew/bin/gcloud" \
+    "/usr/local/bin/gcloud" \
+    "/usr/local/google-cloud-sdk/bin/gcloud"; do
+    if [[ -x "$_g" ]]; then
+      export PATH="$(dirname "$_g"):${PATH}"
+      break
+    fi
+  done
+fi
+if ! command -v gcloud &>/dev/null; then
+  echo "❌ ไม่พบคำสั่ง gcloud"
+  echo "   ติดตั้ง SDK: https://cloud.google.com/sdk/docs/install"
+  echo "   หรือรันใน Terminal ที่ล็อกอิน gcloud แล้ว หรือตั้ง export GCLOUD_BIN=\$HOME/google-cloud-sdk/bin/gcloud"
+  exit 127
+fi
+
 # ตั้งโปรเจกต์
 gcloud config set project "$PROJECT_ID" --quiet
 

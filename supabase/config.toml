@@ -244,3 +244,19 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/system-service-service-visits/deno.json"
 entrypoint = "./functions/system-service-service-visits/index.ts"
+
+[functions.marketing-dashboard-summary]
+enabled = true
+verify_jwt = false
+import_map = "./functions/marketing-dashboard-summary/deno.json"
+entrypoint = "./functions/marketing-dashboard-summary/index.ts"
+
+[functions.marketing-facebook-ads-summary]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/marketing-facebook-ads-summary/index.ts"
+
+[functions.marketing-google-ads-summary]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/marketing-google-ads-summary/index.ts"
