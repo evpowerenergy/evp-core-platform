@@ -1,5 +1,9 @@
 import type { DateRange } from 'react-day-picker';
 import { supabase } from '@/integrations/supabase/client';
+import {
+  fetchLatestProductivityLogsByLeadIds,
+  attachLatestProductivityLogs,
+} from '@/lib/leads/fetchLatestProductivityLogs';
 
 export type AllLeadsTableFetchParams = {
   statusFilter: string;
@@ -105,61 +109,9 @@ export async function fetchAllLeadsTableWithLogs(
 
   if (data.length > 0) {
     const leadIds = data.map((lead: { id: number }) => lead.id);
-
-    const CHUNK_SIZE = 500;
-    const chunks: number[][] = [];
-    for (let i = 0; i < leadIds.length; i += CHUNK_SIZE) {
-      chunks.push(leadIds.slice(i, i + CHUNK_SIZE));
-    }
-
-    const productivityLogsPromises = chunks.map((chunk) =>
-      supabase
-        .from('lead_productivity_logs')
-        .select(
-          `
-          id,
-          lead_id,
-          note,
-          status,
-          created_at_thai
-        `
-        )
-        .in('lead_id', chunk)
-        .order('created_at_thai', { ascending: false })
-    );
-
-    const productivityLogsResults = await Promise.all(productivityLogsPromises);
-
-    let allProductivityLogs: any[] = [];
-    let hasError = false;
-
-    productivityLogsResults.forEach((res, index) => {
-      if (res.error) {
-        console.error(`Error fetching productivity logs for chunk ${index}:`, res.error);
-        hasError = true;
-      } else if (res.data) {
-        allProductivityLogs = [...allProductivityLogs, ...res.data];
-      }
-    });
-
-    if (!hasError && allProductivityLogs.length > 0) {
-      const latestLogsMap = new Map<number, any>();
-      allProductivityLogs.forEach((log) => {
-        if (!latestLogsMap.has(log.lead_id)) {
-          latestLogsMap.set(log.lead_id, log);
-        } else {
-          const existingLog = latestLogsMap.get(log.lead_id);
-          if (new Date(log.created_at_thai) > new Date(existingLog.created_at_thai)) {
-            latestLogsMap.set(log.lead_id, log);
-          }
-        }
-      });
-
-      data.forEach((lead: { id: number }) => {
-        const latestLog = latestLogsMap.get(lead.id);
-        (lead as any).latest_productivity_log = latestLog || null;
-      });
-    }
+    const latestLogsMap = await fetchLatestProductivityLogsByLeadIds(leadIds);
+    const enriched = attachLatestProductivityLogs(data, latestLogsMap);
+    data.splice(0, data.length, ...enriched);
   }
 
   return (data || []).map((lead: any) => ({

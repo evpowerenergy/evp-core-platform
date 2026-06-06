@@ -30,10 +30,10 @@ export const SELECTIVE_INVALIDATION_MAP: Record<TableChangeEvent, string[]> = {
   'leads_update': ['app_data', 'leads', 'dashboard_stats'],
   'leads_delete': ['app_data', 'leads', 'dashboard_stats'],
 
-  // Productivity logs changes - invalidate เฉพาะ appointments และ leads
-  'productivity_logs_insert': ['appointments', 'leads'],
-  'productivity_logs_update': ['appointments', 'leads'],
-  'productivity_logs_delete': ['appointments', 'leads'],
+  // Productivity logs changes - invalidate my-leads (app_data) และ followup stats
+  'productivity_logs_insert': ['appointments', 'leads', 'app_data', 'followup-stats'],
+  'productivity_logs_update': ['appointments', 'leads', 'app_data', 'followup-stats'],
+  'productivity_logs_delete': ['appointments', 'leads', 'app_data', 'followup-stats'],
 
   // Appointments changes - invalidate เฉพาะ appointments
   'appointments_insert': ['appointments'],
@@ -111,6 +111,9 @@ export const selectiveInvalidate = (
           if (queryKey === 'dashboard_stats') {
             return key[0] === 'app_data' || key[0] === 'dashboard_stats';
           }
+          if (queryKey === 'followup-stats') {
+            return key[0] === 'followup-stats';
+          }
           
           return false;
         }
@@ -150,9 +153,16 @@ export const optimisticUpdateLeads = (
         case 'update':
           return {
             ...oldData,
-            leads: (oldData.leads || []).map((lead: any) => 
-              lead.id === newLead.id ? newLead : lead
-            )
+            leads: (oldData.leads || []).map((lead: any) =>
+              lead.id === newLead.id
+                ? {
+                    ...lead,
+                    ...newLead,
+                    latest_productivity_log: lead.latest_productivity_log,
+                    creator_name: lead.creator_name ?? newLead.creator_name,
+                  }
+                : lead
+            ),
           };
         case 'delete':
           return {
@@ -181,8 +191,15 @@ export const optimisticUpdateLeads = (
         case 'insert':
           return [...(oldData || []), newLead];
         case 'update':
-          return (oldData || []).map((lead: any) => 
-            lead.id === newLead.id ? newLead : lead
+          return (oldData || []).map((lead: any) =>
+            lead.id === newLead.id
+              ? {
+                  ...lead,
+                  ...newLead,
+                  latest_productivity_log: lead.latest_productivity_log,
+                  creator_name: lead.creator_name ?? newLead.creator_name,
+                }
+              : lead
           );
         case 'delete':
           return (oldData || []).filter((lead: any) => lead.id !== newLead.id);

@@ -1,6 +1,10 @@
 /// <reference path="./deno.d.ts" />
 // @ts-ignore - URL import is supported by Deno runtime
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import {
+  fetchLatestProductivityLogsByLeadIds,
+  attachLatestProductivityLogs,
+} from '../_shared/fetchLatestProductivityLogs.ts';
 
 // CORS headers helper
 const corsHeaders = {
@@ -182,38 +186,11 @@ Deno.serve(async (req: Request) => {
         }));
       }
 
-      // Get latest productivity log for each lead
       const leadIds = enrichedLeads.map(lead => lead.id);
-      
+
       if (leadIds.length > 0) {
-        const { data: productivityLogsData } = await supabase
-          .from('lead_productivity_logs')
-          .select(`
-            id,
-            lead_id,
-            sale_id,
-            note,
-            status,
-            created_at_thai
-          `)
-          .in('lead_id', leadIds)
-          .order('created_at_thai', { ascending: false });
-
-        if (productivityLogsData) {
-          // สร้าง map ของ productivity log ล่าสุดสำหรับแต่ละ lead
-          const latestLogsMap = new Map();
-          productivityLogsData.forEach(log => {
-            if (!latestLogsMap.has(log.lead_id)) {
-              latestLogsMap.set(log.lead_id, log);
-            }
-          });
-
-          // เพิ่มข้อมูล productivity log ล่าสุดให้กับแต่ละ lead
-          enrichedLeads = enrichedLeads.map(lead => ({
-            ...lead,
-            latest_productivity_log: latestLogsMap.get(lead.id) || null
-          }));
-        }
+        const latestLogsMap = await fetchLatestProductivityLogsByLeadIds(supabase, leadIds);
+        enrichedLeads = attachLatestProductivityLogs(enrichedLeads, latestLogsMap);
       }
     }
 

@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/useToast";
+import { invalidateLeadRelatedQueries } from "@/lib/leads/invalidateLeadQueries";
 import { validateProductivityLogForm } from "@/utils/productivityLogValidation";
 import { ProductivityLogFormData } from "./useProductivityLogForm";
 
@@ -504,10 +505,7 @@ export const useEditProductivityLogSubmission = (
         description: "อัปเดตข้อมูลการติดตามเรียบร้อยแล้ว",
       });
       
-      // รีเฟรชข้อมูล
-      queryClient.invalidateQueries({ queryKey: ['lead-timeline', leadId] });
-      queryClient.invalidateQueries({ queryKey: ['productivity-log', logId] });
-      queryClient.invalidateQueries({ queryKey: ['appointments'] }); // รีเฟรช appointments เพื่อให้ notification system อัปเดต
+      invalidateLeadRelatedQueries(queryClient, { leadId, logId });
       
       resetForm();
       onSuccess();

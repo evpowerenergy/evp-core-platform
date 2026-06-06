@@ -1,4 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
+import {
+  fetchLatestProductivityLogsByLeadIds,
+  attachLatestProductivityLogs,
+} from '../../../lib/leads/fetchLatestProductivityLogs';
 
 export default async function handler(req: any, res: any, env?: Record<string, string>) {
   // Initialize Supabase client with environment variables
@@ -160,38 +164,12 @@ export default async function handler(req: any, res: any, env?: Record<string, s
         }));
       }
 
-      // Get latest productivity log for each lead (เหมือน hook เดิม)
+      // Get latest productivity log per lead via RPC (DISTINCT ON — ไม่โดน PostgREST row limit)
       const leadIds = enrichedLeads.map(lead => lead.id);
-      
+
       if (leadIds.length > 0) {
-        const { data: productivityLogsData } = await supabase
-          .from('lead_productivity_logs')
-          .select(`
-            id,
-            lead_id,
-            sale_id,
-            note,
-            status,
-            created_at_thai
-          `)
-          .in('lead_id', leadIds)
-          .order('created_at_thai', { ascending: false });
-
-        if (productivityLogsData) {
-          // สร้าง map ของ productivity log ล่าสุดสำหรับแต่ละ lead
-          const latestLogsMap = new Map();
-          productivityLogsData.forEach(log => {
-            if (!latestLogsMap.has(log.lead_id)) {
-              latestLogsMap.set(log.lead_id, log);
-            }
-          });
-
-          // เพิ่มข้อมูล productivity log ล่าสุดให้กับแต่ละ lead
-          enrichedLeads = enrichedLeads.map(lead => ({
-            ...lead,
-            latest_productivity_log: latestLogsMap.get(lead.id) || null
-          }));
-        }
+        const latestLogsMap = await fetchLatestProductivityLogsByLeadIds(supabase, leadIds);
+        enrichedLeads = attachLatestProductivityLogs(enrichedLeads, latestLogsMap);
       }
     }
 

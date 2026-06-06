@@ -2326,6 +2326,17 @@ export type Database = {
         Args: { cs_id: number }
         Returns: number
       }
+      get_latest_productivity_logs_for_leads: {
+        Args: { lead_ids: number[] }
+        Returns: {
+          id: number
+          lead_id: number
+          sale_id: number | null
+          note: string | null
+          status: string | null
+          created_at_thai: string | null
+        }[]
+      }
       get_current_user_role: {
         Args: Record<PropertyKey, never>
         Returns: string

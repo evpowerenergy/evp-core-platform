@@ -14,6 +14,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/useToast";
+import { invalidateLeadRelatedQueries } from "@/lib/leads/invalidateLeadQueries";
 import { ProductivityLogFormData } from "./useProductivityLogForm";
 import { createApiClient } from "@/utils/apiClient";
 
@@ -47,10 +48,7 @@ export const useProductivityLogSubmissionAPI = (leadId: number, onSuccess: () =>
       return response.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['lead-timeline', leadId] });
-      queryClient.invalidateQueries({ queryKey: ['leads'] });
-      queryClient.invalidateQueries({ queryKey: ['my-leads'] });
-      queryClient.invalidateQueries({ queryKey: ['my-appointments'] });
+      invalidateLeadRelatedQueries(queryClient, { leadId });
       toast({
         title: "สำเร็จ",
         description: "บันทึกข้อมูลการติดตามลูกค้าเรียบร้อยแล้ว",

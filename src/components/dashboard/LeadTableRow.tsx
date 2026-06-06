@@ -129,29 +129,26 @@ const LeadTableRow = ({
       </TableCell>
       <TableCell>
         <div className="max-w-xs">
-          {lead.latest_productivity_log?.note ? (
+          {lead.latest_productivity_log ? (
             <div className="space-y-1">
-              <div className="text-xs text-gray-500">
-                {(() => {
-                  const dateStr = lead.latest_productivity_log.created_at_thai;
-                  if (!dateStr) return '';
-                  
-                  // แปลงจาก 2025-09-17T11:34:08.370852+00:00 เป็น 17/09/2025 , 11:34
-                  const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
-                  if (match) {
-                    const [, year, month, day, hours, minutes] = match;
-                    return `${day}/${month}/${year} , ${hours}:${minutes}`;
-                  }
-                  
-                  return dateStr; // fallback ถ้าไม่ match
-                })()}
-              </div>
-              <div className="text-sm text-gray-700 leading-relaxed">
-                {lead.latest_productivity_log.note.length > 80 
-                  ? `${lead.latest_productivity_log.note.substring(0, 80)}...` 
-                  : lead.latest_productivity_log.note
-                }
-              </div>
+              {lead.latest_productivity_log.created_at_thai && (
+                <div className="text-xs text-gray-500">
+                  {formatDateTime(lead.latest_productivity_log.created_at_thai)}
+                </div>
+              )}
+              {lead.latest_productivity_log.note ? (
+                <div className="text-sm text-gray-700 leading-relaxed">
+                  {lead.latest_productivity_log.note.length > 80
+                    ? `${lead.latest_productivity_log.note.substring(0, 80)}...`
+                    : lead.latest_productivity_log.note}
+                </div>
+              ) : (
+                <div className="text-sm text-gray-500 italic">
+                  {lead.latest_productivity_log.status
+                    ? `ติดตามแล้ว (${lead.latest_productivity_log.status})`
+                    : 'ติดตามแล้ว (ไม่มีรายละเอียด)'}
+                </div>
+              )}
             </div>
           ) : (
             <span className="text-sm text-gray-400 italic">ยังไม่มีการติดตาม</span>
