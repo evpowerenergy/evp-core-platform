@@ -2,7 +2,7 @@
 
 **📌 สิ่งสำคัญ:** เอกสารนี้แสดง **API จริง** ที่ใช้ใน Production
 
-**✅ Status:** มี Edge Functions ทั้งหมด **34 functions** (ตรงกับ Local API)
+**✅ Status:** มี Edge Functions ทั้งหมด **45 functions** (รวม Marketing + Auto Sync)
 
 **อัพเดทล่าสุด:** 2025-01-27
 
@@ -166,6 +166,33 @@
 
 ---
 
+### **Marketing APIs (4 functions)**
+
+35. `marketing-dashboard-summary`
+    - URL: `https://ttfjapfdzrxmbxbarfbn.supabase.co/functions/v1/marketing-dashboard-summary`
+    - Method: GET, POST
+
+36. `marketing-facebook-ads-summary`
+    - URL: `https://ttfjapfdzrxmbxbarfbn.supabase.co/functions/v1/marketing-facebook-ads-summary`
+    - Method: GET, POST
+
+37. `marketing-facebook-ads-sync`
+    - URL: `https://ttfjapfdzrxmbxbarfbn.supabase.co/functions/v1/marketing-facebook-ads-sync`
+    - Method: GET, POST
+    - Note: ดึง ads จาก Facebook คืน JSON (client ทำ upsert) — ใช้กับปุ่ม Sync บนหน้าเว็บ
+
+38. `marketing-facebook-ads-auto-sync`
+    - URL: `https://ttfjapfdzrxmbxbarfbn.supabase.co/functions/v1/marketing-facebook-ads-auto-sync`
+    - Method: POST
+    - Auth: `Authorization: Bearer <SERVICE_ROLE_KEY>` หรือ `x-cron-secret: <CRON_SECRET>`
+    - Note: ดึง ads ทั้งหมด + Caption แล้ว upsert ลง `ads_campaigns` — เรียกโดย pg_cron ทุกวัน
+
+39. `marketing-google-ads-summary`
+    - URL: `https://ttfjapfdzrxmbxbarfbn.supabase.co/functions/v1/marketing-google-ads-summary`
+    - Method: GET, POST
+
+---
+
 ### **⚙️ Infrastructure APIs (4 functions)**
 
 31. `system-openai-sync`
@@ -193,8 +220,9 @@
 | **Core** | 17 |
 | **Additional** | 9 |
 | **System** | 10 |
+| **Marketing** | 5 |
 | **Infrastructure** | 4 |
-| **รวม** | **40** |
+| **รวม** | **45** |
 
 **หมายเหตุ:** นับ `sale-follow-up` เป็น GET + POST = 2 methods
 

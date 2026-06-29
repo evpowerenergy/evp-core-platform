@@ -260,3 +260,13 @@ entrypoint = "./functions/marketing-facebook-ads-summary/index.ts"
 enabled = true
 verify_jwt = false
 entrypoint = "./functions/marketing-google-ads-summary/index.ts"
+
+[functions.marketing-facebook-ads-sync]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/marketing-facebook-ads-sync/index.ts"
+
+[functions.marketing-facebook-ads-auto-sync]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/marketing-facebook-ads-auto-sync/index.ts"

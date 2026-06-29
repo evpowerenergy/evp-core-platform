@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { DateRange } from "react-day-picker";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { getFacebookAdsData } from "@/utils/facebookAdsUtils";
-import { getGoogleAdsData } from "@/utils/googleAdsUtils";
+import { getGoogleAdsDailyBreakdown } from "@/utils/googleAdsUtils";
 import { supabase } from "@/integrations/supabase/client";
 import { filterLeadsWithContact } from "@/utils/leadQueryFilters";
 import { 
@@ -103,9 +103,20 @@ const MarketingLineChart: React.FC<MarketingLineChartProps> = ({ className, hide
         console.error('❌ Leads query error:', leadsError);
       }
 
+      // Fetch Google Ads daily breakdown in one request for the whole range
+      let googleDailyByDate = new Map<string, number>();
+      try {
+        const googleDaily = await getGoogleAdsDailyBreakdown(startDate, endDate, 'campaign');
+        if (googleDaily?.length) {
+          googleDailyByDate = new Map(googleDaily.map((d) => [d.date, d.totalCost]));
+        }
+      } catch (error) {
+        console.error('Google Ads API Error:', error);
+      }
+
       // Fetch data for each date
       let hasFacebookSuccess = false;
-      let hasGoogleSuccess = false;
+      const hasGoogleSuccess = googleDailyByDate.size > 0;
       const chartDataPromises = dateArray.map(async (date) => {
         const dateStart = date + 'T00:00:00.000';
         const dateEnd = date + 'T23:59:59.999';
@@ -123,14 +134,8 @@ const MarketingLineChart: React.FC<MarketingLineChartProps> = ({ className, hide
           }
         }
 
-        // Fetch Google Ads data
-        let googleData = null;
-        try {
-          googleData = await getGoogleAdsData(date, date, 'campaign');
-          if (googleData) hasGoogleSuccess = true;
-        } catch (error) {
-          console.error('Google Ads API Error for date', date, error);
-        }
+        // Google spend for this date (from single range request above)
+        const googleSpend = googleDailyByDate.get(date) ?? 0;
 
         // คำนวณจำนวนลีดสำหรับวันนี้จากข้อมูลทั้งหมด (ใช้เงื่อนไขเดียวกับ AllLeadsReport)
         const dailyLeads = allLeadsData?.filter(lead => {
@@ -145,7 +150,6 @@ const MarketingLineChart: React.FC<MarketingLineChartProps> = ({ className, hide
 
         const totalLeads = validPlatformLeads.length;
         const facebookSpend = facebookData?.totalSpend || 0;
-        const googleSpend = googleData?.totalCost || 0;
         const totalAdBudget = facebookSpend + googleSpend;
 
         return {

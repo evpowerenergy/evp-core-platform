@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { DateRange } from "react-day-picker";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { getFacebookAdsData } from "@/utils/facebookAdsUtils";
-import { getGoogleAdsData } from "@/utils/googleAdsUtils";
+import { getGoogleAdsDailyBreakdown } from "@/utils/googleAdsUtils";
 import { getSalesDataInPeriod } from "@/utils/salesUtils";
 import { supabase } from "@/integrations/supabase/client";
 import { 
@@ -78,9 +78,19 @@ const SalesAdsLineChart: React.FC<SalesAdsLineChartProps> = ({ className }) => {
 
       // Note: We now fetch sales data for each day individually for accurate daily breakdown
 
+      // Fetch Google Ads daily breakdown in one request for the whole range
+      let googleDailyByDate = new Map<string, number>();
+      try {
+        const googleDaily = await getGoogleAdsDailyBreakdown(startDate, endDate, 'campaign');
+        if (googleDaily?.length) {
+          googleDailyByDate = new Map(googleDaily.map((d) => [d.date, d.totalCost]));
+        }
+      } catch (error) {
+        console.error('Google Ads API Error:', error);
+      }
+
       // Fetch data for each date
       let hasFacebookSuccess = false;
-      let hasGoogleSuccess = false;
       const chartDataPromises = dateArray.map(async (date) => {
         const dateStart = date + 'T00:00:00.000';
         const dateEnd = date + 'T23:59:59.999';
@@ -94,14 +104,8 @@ const SalesAdsLineChart: React.FC<SalesAdsLineChartProps> = ({ className }) => {
           console.error('Facebook API Error for date', date, error);
         }
 
-        // Fetch Google Ads data
-        let googleData = null;
-        try {
-          googleData = await getGoogleAdsData(date, date, 'campaign');
-          if (googleData) hasGoogleSuccess = true;
-        } catch (error) {
-          console.error('Google Ads API Error for date', date, error);
-        }
+        const googleSpend = googleDailyByDate.get(date) ?? 0;
+        const facebookSpend = facebookData?.totalSpend || 0;
 
         // Fetch daily sales data for this specific date
         let dailySalesData = null;
@@ -112,11 +116,7 @@ const SalesAdsLineChart: React.FC<SalesAdsLineChartProps> = ({ className }) => {
         }
 
         const dailySales = dailySalesData?.totalSalesValue || 0;
-
-        const facebookSpend = facebookData?.totalSpend || 0;
-        const googleSpend = googleData?.totalCost || 0;
         const totalAdBudget = facebookSpend + googleSpend;
-
 
         return {
           date: date,
@@ -128,7 +128,7 @@ const SalesAdsLineChart: React.FC<SalesAdsLineChartProps> = ({ className }) => {
       const chartDataResults = await Promise.all(chartDataPromises);
       setChartData(chartDataResults);
       setFacebookApiConnected(hasFacebookSuccess);
-      setGoogleApiConnected(hasGoogleSuccess);
+      setGoogleApiConnected(googleDailyByDate.size > 0);
 
     } catch (error) {
       console.error('Error fetching chart data:', error);
