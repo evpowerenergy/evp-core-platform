@@ -5,6 +5,7 @@ import ProductivityLogFormFields from "./form-sections/ProductivityLogFormFields
 import ProductivityLogFormActions from "./form-sections/ProductivityLogFormActions";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { datetimeFieldToBangkokInput, utcToBangkokDateOnly } from "@/utils/thailandDateTime";
 
 interface EditProductivityLogFormProps {
   logId: number;
@@ -16,42 +17,11 @@ interface EditProductivityLogFormProps {
 }
 
 const EditProductivityLogForm = ({ logId, leadId, onSuccess, isWholesale, isPackage, customerName }: EditProductivityLogFormProps) => {
-  // ฟังก์ชันช่วยแปลงรูปแบบวันที่สำหรับ input datetime-local
-  const formatDateForInput = (dateString: string | null): string => {
-    if (!dateString) return '';
-    try {
-      // ใช้ toISOString() เพื่อแปลงเป็น UTC แล้วตัด timezone ออก
-      const date = new Date(dateString);
-      if (isNaN(date.getTime())) return '';
-      
-      // แปลงเป็นรูปแบบ YYYY-MM-DDTHH:mm สำหรับ input datetime-local
-      // ใช้ toISOString() แล้วตัดส่วน timezone และ seconds ออก
-      const isoString = date.toISOString();
-      // ตัดส่วน timezone และ seconds ออก: "2025-09-06T05:56:00.000Z" -> "2025-09-06T05:56"
-      return isoString.substring(0, 16);
-    } catch (error) {
-      console.error('❌ Error formatting date:', error);
-      return '';
-    }
-  };
+  const formatDateForInput = (dateThai: string | null, dateUtc: string | null): string =>
+    datetimeFieldToBangkokInput(dateThai, dateUtc);
 
-  // ฟังก์ชันช่วยแปลงรูปแบบวันที่สำหรับ input type="date" (YYYY-MM-DD)
-  const formatDateOnly = (dateString: string | null): string => {
-    if (!dateString) return '';
-    try {
-      const date = new Date(dateString);
-      if (isNaN(date.getTime())) return '';
-      
-      // แปลงเป็น YYYY-MM-DD สำหรับ input type="date"
-      const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const day = String(date.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    } catch (error) {
-      console.error('❌ Error formatting date:', error);
-      return '';
-    }
-  };
+  const formatDateOnly = (dateString: string | null): string =>
+    dateString ? utcToBangkokDateOnly(dateString) : '';
 
   const { data: logData, error: logError, isLoading } = useQuery({
     queryKey: ["productivity-log", logId],
@@ -86,6 +56,7 @@ const EditProductivityLogForm = ({ logId, leadId, onSuccess, isWholesale, isPack
           installment_percent,
           installment_amount,
           estimate_payment_date,
+          estimate_payment_date_thai,
           installment_periods
         `)
         .eq("productivity_log_id", logId);
@@ -118,6 +89,8 @@ const EditProductivityLogForm = ({ logId, leadId, onSuccess, isWholesale, isPack
         .select(`
           id,
           date,
+          date_thai,
+          appointment_type,
           location,
           building_details,
           installation_notes
@@ -232,7 +205,9 @@ const EditProductivityLogForm = ({ logId, leadId, onSuccess, isWholesale, isPack
       const quotationData = quotations && quotations.length > 0 ? quotations[0] : {} as any;
       
       // ดึงข้อมูลจาก appointment ถ้ามี
-      const appointmentData = appointments && appointments.length > 0 ? appointments[0] : {} as any;
+      const engineerAppointment = (appointments || []).find(
+        (a: { appointment_type?: string }) => a.appointment_type === 'engineer'
+      ) || (appointments || [])[0] || {} as any;
       
       // แยกเอกสารตามประเภทและรวม amount และ delivery_fee
       const quotationDocuments = (quotation_documents as any[])
@@ -259,7 +234,7 @@ const EditProductivityLogForm = ({ logId, leadId, onSuccess, isWholesale, isPack
         cxl_reason: rest.cxl_reason || '',
         cxl_detail: rest.cxl_detail || '',
         next_follow_up_details: rest.next_follow_up_details || '',
-        next_follow_up: formatDateForInput(rest.next_follow_up),
+        next_follow_up: formatDateForInput(rest.next_follow_up_thai, rest.next_follow_up),
         // ข้อมูลจาก quotation
         has_qt: quotationData.has_qt || false,
         has_inv: quotationData.has_inv || false,
@@ -268,15 +243,17 @@ const EditProductivityLogForm = ({ logId, leadId, onSuccess, isWholesale, isPack
         installment_type: quotationData.installment_type || 'full_payment',
         installment_percent: quotationData.installment_percent || null,
         installment_amount: quotationData.installment_amount || null,
-        estimate_payment_date: formatDateOnly(quotationData.estimate_payment_date),
+        estimate_payment_date: quotationData.estimate_payment_date_thai
+          ? quotationData.estimate_payment_date_thai.split('T')[0]
+          : formatDateOnly(quotationData.estimate_payment_date),
         installment_periods: quotationData.installment_periods || null,
         is_zero_down_payment: rest.is_zero_down_payment || false,
         down_payment_amount: rest.down_payment_amount || null,
         // ข้อมูลจาก appointment
-        site_visit_date: formatDateForInput(appointmentData.date),
-        location: appointmentData.location || '',
-        building_info: appointmentData.building_details || '',
-        installation_notes: appointmentData.installation_notes || '',
+        site_visit_date: formatDateForInput(engineerAppointment.date_thai, engineerAppointment.date),
+        location: engineerAppointment.location || '',
+        building_info: engineerAppointment.building_details || '',
+        installation_notes: engineerAppointment.installation_notes || '',
         // แปลง null เป็น empty string สำหรับฟิลด์อื่นๆ
         note: rest.note || '',
         operation_status: rest.status || '',

@@ -153,6 +153,7 @@ Deno.serve(async (req: Request) => {
         .select(`
           id,
           estimate_payment_date,
+          estimate_payment_date_thai,
           total_amount,
           payment_method,
           productivity_log_id
@@ -211,6 +212,7 @@ Deno.serve(async (req: Request) => {
       return {
         id: item.id,
         date: item.estimate_payment_date,
+        date_thai: item.estimate_payment_date_thai,
         total_amount: item.total_amount,
         payment_method: item.payment_method,
         type: 'payment',

@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Calendar, User, Phone, MapPin } from "lucide-react";
+import { formatDateTime, getAppointmentDisplayValue } from "@/utils/dashboardUtils";
 
 type AppointmentType = 'follow-up' | 'engineer' | 'payment';
 
@@ -17,6 +18,7 @@ interface LeadInfo {
 interface BaseAppointment {
   id: number;
   date: string;
+  date_thai?: string | null;
   type: AppointmentType;
   lead: LeadInfo;
 }
@@ -54,17 +56,9 @@ export const AppointmentDetailDialog = ({
   onOpenChange,
   appointment
 }: AppointmentDetailDialogProps) => {
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('th-TH', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-
   if (!appointment) return null;
+
+  const displayDate = getAppointmentDisplayValue(appointment.date_thai, appointment.date);
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -107,7 +101,7 @@ export const AppointmentDetailDialog = ({
             <CardContent className="space-y-3">
               <div className="flex items-center gap-2">
                 <Calendar className="h-4 w-4 text-gray-500" />
-                <span>{formatDate(appointment.date)}</span>
+                <span>{formatDateTime(displayDate)}</span>
               </div>
               <div>
                 <span className="text-sm text-gray-500">ประเภท:</span>

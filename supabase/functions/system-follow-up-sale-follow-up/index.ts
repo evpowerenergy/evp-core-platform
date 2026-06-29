@@ -1,6 +1,7 @@
 /// <reference path="./deno.d.ts" />
 // @ts-ignore - URL import is supported by Deno runtime
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { bangkokDateTimeToUTC, utcToThaiStoredOffset } from '../_shared/thailandDateTime.ts';
 
 // Utility function to normalize phone numbers for comparison (เหมือน API เดิม)
 const normalizePhoneNumber = (phone: string | null | undefined): string => {
@@ -376,14 +377,12 @@ Deno.serve(async (req: Request) => {
           );
         }
 
-        // Calculate Thai time (UTC + 7) (เหมือน API เดิม)
-        const followUpDateThai = new Date(followUpData.sale_follow_up_date);
-        followUpDateThai.setHours(followUpDateThai.getHours() + 7);
+        const saleFollowUpDateUtc = bangkokDateTimeToUTC(followUpData.sale_follow_up_date);
 
         const updateData = {
           sale_follow_up_required: true,
-          sale_follow_up_date: followUpData.sale_follow_up_date,
-          sale_follow_up_date_thai: followUpDateThai.toISOString(),
+          sale_follow_up_date: saleFollowUpDateUtc,
+          sale_follow_up_date_thai: utcToThaiStoredOffset(saleFollowUpDateUtc),
           sale_follow_up_details: followUpData.sale_follow_up_details,
           sale_follow_up_notes: "",
           sale_follow_up_assigned_to: followUpData.sale_follow_up_assigned_to,
@@ -391,7 +390,6 @@ Deno.serve(async (req: Request) => {
           sale_follow_up_created_at: new Date().toISOString(),
           sale_follow_up_updated_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-          updated_at_thai: new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString(),
         };
 
         const { data, error } = await supabase
@@ -432,14 +430,12 @@ Deno.serve(async (req: Request) => {
           ...followUpData,
           sale_follow_up_updated_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-          updated_at_thai: new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString(),
         };
 
-        // Recalculate Thai time if date is being updated (เหมือน API เดิม)
         if (followUpData.sale_follow_up_date) {
-          const followUpDateThai = new Date(followUpData.sale_follow_up_date);
-          followUpDateThai.setHours(followUpDateThai.getHours() + 7);
-          updateData.sale_follow_up_date_thai = followUpDateThai.toISOString();
+          const saleFollowUpDateUtc = bangkokDateTimeToUTC(followUpData.sale_follow_up_date);
+          updateData.sale_follow_up_date = saleFollowUpDateUtc;
+          updateData.sale_follow_up_date_thai = utcToThaiStoredOffset(saleFollowUpDateUtc);
         }
 
         const { data, error } = await supabase
@@ -480,7 +476,6 @@ Deno.serve(async (req: Request) => {
           sale_follow_up_status: "cancelled",
           sale_follow_up_updated_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-          updated_at_thai: new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString(),
         };
 
         const { data, error } = await supabase
@@ -520,7 +515,6 @@ Deno.serve(async (req: Request) => {
         const updateData = {
           ...customerData,
           updated_at: new Date().toISOString(),
-          updated_at_thai: new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString(),
         };
 
         const { data, error } = await supabase

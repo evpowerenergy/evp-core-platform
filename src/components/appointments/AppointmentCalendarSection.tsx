@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { AppointmentCard } from "./AppointmentCard";
+import { getAppointmentDisplayValue, getDatePartFromThai, parseThaiDatePart } from "@/utils/dashboardUtils";
 
 type AppointmentType = 'follow-up' | 'engineer' | 'payment';
 
@@ -18,6 +19,7 @@ interface LeadInfo {
 interface BaseAppointment {
   id: number;
   date: string;
+  date_thai?: string | null;
   type: AppointmentType;
   lead: LeadInfo;
 }
@@ -57,27 +59,35 @@ export const AppointmentCalendarSection = ({
   selectedDate,
   onDateSelect
 }: AppointmentCalendarSectionProps) => {
+  const getDisplayValue = (apt: AppointmentDetail) =>
+    getAppointmentDisplayValue(apt.date_thai, apt.date);
+
   const getAppointmentDates = (appointments: AppointmentDetail[]) => {
-    return appointments.map(apt => new Date(apt.date));
+    return appointments
+      .map(apt => parseThaiDatePart(getDisplayValue(apt)))
+      .filter((d): d is Date => d !== null);
   };
 
   const getAppointmentCountByDate = (appointments: AppointmentDetail[]) => {
     const countMap = new Map<string, number>();
     appointments.forEach(apt => {
-      const dateKey = new Date(apt.date).toDateString();
+      const dateKey = getDatePartFromThai(getDisplayValue(apt));
+      if (!dateKey) return;
       countMap.set(dateKey, (countMap.get(dateKey) || 0) + 1);
     });
     return countMap;
   };
 
-
   const getAppointmentsForSelectedDate = (appointments: AppointmentDetail[]) => {
     if (!selectedDate) return [];
-    
-    return appointments.filter(apt => {
-      const aptDate = new Date(apt.date);
-      return aptDate.toDateString() === selectedDate.toDateString();
-    });
+
+    const selectedKey = [
+      selectedDate.getFullYear(),
+      String(selectedDate.getMonth() + 1).padStart(2, '0'),
+      String(selectedDate.getDate()).padStart(2, '0'),
+    ].join('-');
+
+    return appointments.filter(apt => getDatePartFromThai(getDisplayValue(apt)) === selectedKey);
   };
 
   const appointmentDates = getAppointmentDates(appointments);
@@ -158,7 +168,11 @@ export const AppointmentCalendarSection = ({
                 }}
                 components={{
                   Day: ({ date, ...props }) => {
-                    const dayKey = date.toDateString();
+                    const dayKey = [
+                      date.getFullYear(),
+                      String(date.getMonth() + 1).padStart(2, '0'),
+                      String(date.getDate()).padStart(2, '0'),
+                    ].join('-');
                     const appointmentCount = appointmentCountByDate.get(dayKey) || 0;
                     const isToday = date.toDateString() === new Date().toDateString();
                     const hasAppointment = appointmentCount > 0;

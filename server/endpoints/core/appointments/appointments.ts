@@ -125,6 +125,7 @@ export default async function handler(req: any, res: any, env?: Record<string, s
         .select(`
           id,
           estimate_payment_date,
+          estimate_payment_date_thai,
           total_amount,
           payment_method,
           productivity_log_id
@@ -140,6 +141,7 @@ export default async function handler(req: any, res: any, env?: Record<string, s
       return {
         id: item.id,
         date: item.date,
+        date_thai: item.date_thai,
         type: 'follow-up',
         details: item.note,
         lead: relatedLog?.lead || { id: 0, full_name: 'Unknown' },
@@ -153,6 +155,7 @@ export default async function handler(req: any, res: any, env?: Record<string, s
       return {
         id: item.id,
         date: item.date,
+        date_thai: item.date_thai,
         location: item.location,
         building_details: item.building_details,
         installation_notes: item.installation_notes,
@@ -170,6 +173,7 @@ export default async function handler(req: any, res: any, env?: Record<string, s
       return {
         id: item.id,
         date: item.estimate_payment_date,
+        date_thai: item.estimate_payment_date_thai,
         total_amount: item.total_amount,
         payment_method: item.payment_method,
         type: 'payment',

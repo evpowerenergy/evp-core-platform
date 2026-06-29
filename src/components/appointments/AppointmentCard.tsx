@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Clock, MapPin, DollarSign, ExternalLink } from "lucide-react";
 import { Link } from "react-router-dom";
 import { getCategoryBadgeClassName } from "@/utils/categoryBadgeUtils";
+import { formatDateTime, getAppointmentDisplayValue } from "@/utils/dashboardUtils";
 
 type AppointmentType = 'follow-up' | 'engineer' | 'payment';
 
@@ -18,6 +19,7 @@ interface LeadInfo {
 interface BaseAppointment {
   id: number;
   date: string;
+  date_thai?: string | null;
   type: AppointmentType;
   lead: LeadInfo;
 }
@@ -47,12 +49,7 @@ interface AppointmentCardProps {
 }
 
 export const AppointmentCard = ({ appointment, color, onClick }: AppointmentCardProps) => {
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('th-TH', {
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
+  const displayDate = getAppointmentDisplayValue(appointment.date_thai, appointment.date);
 
   const getAppointmentDetail = () => {
     switch (appointment.type) {
@@ -196,7 +193,7 @@ export const AppointmentCard = ({ appointment, color, onClick }: AppointmentCard
       <div className="space-y-2">
         <div className="flex items-center gap-2 text-sm text-gray-700">
           <Clock className="h-3 w-3 text-gray-500" />
-          <span>{formatDate(appointment.date)}</span>
+          <span>{formatDateTime(displayDate)}</span>
         </div>
         
         <div className="flex items-center gap-2 text-sm text-gray-700">

@@ -2,6 +2,7 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatDate, formatTime } from "@/utils/dashboardUtils";
+import { getThaiDisplayValue } from "@/utils/thailandDateTime";
 import { Button } from "@/components/ui/button";
 import { Calendar, Clock, Hash, MessageSquare, FileText, CreditCard, Zap, Receipt } from "lucide-react";
 import { getActivityIcon, getActivityTitle } from "@/utils/leadTimelineUtils";
@@ -189,11 +190,12 @@ const LatestLeadLogCard = ({
               )}
 
               {/* Next Follow Up */}
-              {(latestLog.next_follow_up_thai || latestLog.next_follow_up) && (
+              {getThaiDisplayValue(latestLog.next_follow_up_thai, latestLog.next_follow_up) && (
                 <div className="p-2 bg-green-50 rounded-lg">
                   <div className="text-xs font-medium text-green-800 mb-1">การติดตามครั้งต่อไป</div>
                   <div className="text-xs text-green-700">
-                    {formatDate(latestLog.next_follow_up_thai || latestLog.next_follow_up)} {formatTime(latestLog.next_follow_up_thai || latestLog.next_follow_up)}
+                    {formatDate(getThaiDisplayValue(latestLog.next_follow_up_thai, latestLog.next_follow_up))}{' '}
+                    {formatTime(getThaiDisplayValue(latestLog.next_follow_up_thai, latestLog.next_follow_up))}
                   </div>
                   {latestLog.next_follow_up_details && (
                     <div className="text-xs text-green-600 mt-1">{latestLog.next_follow_up_details}</div>

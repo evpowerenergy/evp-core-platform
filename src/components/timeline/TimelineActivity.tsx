@@ -12,6 +12,7 @@ import ActivityHeader from './activity-sections/ActivityHeader';
 import BasicActivityInfo from './activity-sections/BasicActivityInfo';
 import NotesAndTags from './activity-sections/NotesAndTags';
 import EditProductivityLogDialog from './EditProductivityLogDialog';
+import { getThaiDisplayValue } from "@/utils/thailandDateTime";
 
 interface TimelineActivity {
   id: number;
@@ -100,7 +101,7 @@ const TimelineActivity = ({ activity, isLast, followupRound, leadId, isWholesale
                 {/* Left Column */}
                 <div className="space-y-6">
                   <BasicActivityInfo 
-                    nextFollowUp={activity.next_follow_up_thai || activity.next_follow_up} 
+                    nextFollowUp={getThaiDisplayValue(activity.next_follow_up_thai, activity.next_follow_up)} 
                     nextFollowUpDetails={activity.next_follow_up_details}
                   />
                   

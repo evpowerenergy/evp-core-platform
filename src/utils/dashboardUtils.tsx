@@ -4,6 +4,7 @@ import { LEAD_STATUS_OPTIONS, getLeadStatusColor, getOperationStatusColor } from
 import { Clock, CheckCircle, AlertCircle, UserCheck } from "lucide-react";
 import SimplePlatformIcon from "@/components/SimplePlatformIcon";
 import { normalizePhoneNumber } from "./leadValidation";
+import { getThaiDisplayValue } from "./thailandDateTime";
 
 export const PLATFORM_OPTIONS = [
   'Facebook',
@@ -76,6 +77,30 @@ export const formatTime = (dateString: string) => {
   } catch {
     return '';
   }
+};
+
+/** ค่าเวลาสำหรับแสดงนัดหมาย — ใช้ *_thai ก่อน (มาตรฐานระบบ) */
+export const getAppointmentDisplayValue = (
+  dateThai?: string | null,
+  date?: string | null
+): string => getThaiDisplayValue(dateThai, date);
+
+/** ดึงส่วนวันที่ YYYY-MM-DD จาก *_thai โดยไม่แปลง timezone */
+export const getDatePartFromThai = (dateString?: string | null): string => {
+  if (!dateString) return '';
+  return dateString.split('T')[0] || dateString.split(' ')[0] || '';
+};
+
+/** แปลงส่วนวันที่เป็น Date object สำหรับปฏิทิน (local, ไม่ shift timezone) */
+export const parseThaiDatePart = (dateString?: string | null): Date | null => {
+  const datePart = getDatePartFromThai(dateString);
+  const [yearStr, monthStr, dayStr] = datePart.split('-');
+  if (!yearStr || !monthStr || !dayStr) return null;
+  const year = parseInt(yearStr, 10);
+  const month = parseInt(monthStr, 10);
+  const day = parseInt(dayStr, 10);
+  if (Number.isNaN(year) || Number.isNaN(month) || Number.isNaN(day)) return null;
+  return new Date(year, month - 1, day);
 };
 
 // รูปแบบวันที่และเวลารวมกัน สำหรับคอลัมน์ "อัพเดทล่าสุด"

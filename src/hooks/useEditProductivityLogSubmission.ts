@@ -4,6 +4,7 @@ import { useToast } from "@/hooks/useToast";
 import { invalidateLeadRelatedQueries } from "@/lib/leads/invalidateLeadQueries";
 import { validateProductivityLogForm } from "@/utils/productivityLogValidation";
 import { ProductivityLogFormData } from "./useProductivityLogForm";
+import { parseUserDateTimeToUTC } from "@/utils/thailandDateTime";
 
 export const useEditProductivityLogSubmission = (
   logId: number,
@@ -31,7 +32,7 @@ export const useEditProductivityLogSubmission = (
         .update({
           status: data.operation_status,
           note: data.note || null,
-          next_follow_up: data.next_follow_up || null,
+          next_follow_up: parseUserDateTimeToUTC(data.next_follow_up),
           next_follow_up_details: data.next_follow_up_details || null,
           contact_status: data.contact_status || null,
           contact_fail_reason: data.contact_fail_reason || null,
@@ -95,7 +96,7 @@ export const useEditProductivityLogSubmission = (
               payment_method: data.payment_method || null,
               installment_percent: data.installment_percent,
               installment_amount: data.installment_amount,
-              estimate_payment_date: data.estimate_payment_date || null,
+              estimate_payment_date: parseUserDateTimeToUTC(data.estimate_payment_date) || data.estimate_payment_date || null,
               installment_periods: data.installment_periods,
             })
             .eq('productivity_log_id', logId);
@@ -116,7 +117,7 @@ export const useEditProductivityLogSubmission = (
               payment_method: data.payment_method || null,
               installment_percent: data.installment_percent,
               installment_amount: data.installment_amount,
-              estimate_payment_date: data.estimate_payment_date || null,
+              estimate_payment_date: parseUserDateTimeToUTC(data.estimate_payment_date) || data.estimate_payment_date || null,
               installment_periods: data.installment_periods,
             });
 
@@ -298,7 +299,7 @@ export const useEditProductivityLogSubmission = (
           const { error: updateError } = await supabase
             .from('appointments')
             .update({
-              date: data.site_visit_date ? new Date(data.site_visit_date).toISOString() : null,
+              date: parseUserDateTimeToUTC(data.site_visit_date),
               location: data.location || null,
               building_details: data.building_info || null,
               installation_notes: data.installation_notes || null,
@@ -316,7 +317,7 @@ export const useEditProductivityLogSubmission = (
             .from('appointments')
             .insert({
               productivity_log_id: logId,
-              date: data.site_visit_date ? new Date(data.site_visit_date).toISOString() : null,
+              date: parseUserDateTimeToUTC(data.site_visit_date),
               location: data.location || null,
               building_details: data.building_info || null,
               installation_notes: data.installation_notes || null,
@@ -362,7 +363,7 @@ export const useEditProductivityLogSubmission = (
           const { error: updateError } = await supabase
             .from('appointments')
             .update({
-              date: new Date(data.next_follow_up).toISOString(),
+              date: parseUserDateTimeToUTC(data.next_follow_up),
               note: data.next_follow_up_details || 'การนัดติดตามครั้งถัดไป',
               appointment_type: 'follow-up',
             })
@@ -378,7 +379,7 @@ export const useEditProductivityLogSubmission = (
             .from('appointments')
             .insert({
               productivity_log_id: logId,
-              date: new Date(data.next_follow_up).toISOString(),
+              date: parseUserDateTimeToUTC(data.next_follow_up),
               appointment_type: 'follow-up',
               status: 'scheduled',
               note: data.next_follow_up_details || 'การนัดติดตามครั้งถัดไป'

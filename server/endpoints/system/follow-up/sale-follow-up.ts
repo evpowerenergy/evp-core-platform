@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { bangkokDateTimeToUTC, utcToThaiStoredOffset } from '../../../lib/thailandDateTime';
 
 // Utility function to normalize phone numbers for comparison
 const normalizePhoneNumber = (phone: string | null | undefined): string => {
@@ -318,14 +319,12 @@ export default async function handler(req: any, res: any, env?: Record<string, s
           return;
         }
 
-        // Calculate Thai time (UTC + 7)
-        const followUpDateThai = new Date(followUpData.sale_follow_up_date);
-        followUpDateThai.setHours(followUpDateThai.getHours() + 7);
+        const saleFollowUpDateUtc = bangkokDateTimeToUTC(followUpData.sale_follow_up_date);
 
         const updateData = {
           sale_follow_up_required: true,
-          sale_follow_up_date: followUpData.sale_follow_up_date,
-          sale_follow_up_date_thai: followUpDateThai.toISOString(),
+          sale_follow_up_date: saleFollowUpDateUtc,
+          sale_follow_up_date_thai: utcToThaiStoredOffset(saleFollowUpDateUtc),
           sale_follow_up_details: followUpData.sale_follow_up_details,
           sale_follow_up_notes: "",
           sale_follow_up_assigned_to: followUpData.sale_follow_up_assigned_to,
@@ -333,7 +332,6 @@ export default async function handler(req: any, res: any, env?: Record<string, s
           sale_follow_up_created_at: new Date().toISOString(),
           sale_follow_up_updated_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-          updated_at_thai: new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString(),
         };
 
         const { data, error } = await supabase
@@ -366,14 +364,12 @@ export default async function handler(req: any, res: any, env?: Record<string, s
           ...followUpData,
           sale_follow_up_updated_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-          updated_at_thai: new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString(),
         };
 
-        // Recalculate Thai time if date is being updated
         if (followUpData.sale_follow_up_date) {
-          const followUpDateThai = new Date(followUpData.sale_follow_up_date);
-          followUpDateThai.setHours(followUpDateThai.getHours() + 7);
-          updateData.sale_follow_up_date_thai = followUpDateThai.toISOString();
+          const saleFollowUpDateUtc = bangkokDateTimeToUTC(followUpData.sale_follow_up_date);
+          updateData.sale_follow_up_date = saleFollowUpDateUtc;
+          updateData.sale_follow_up_date_thai = utcToThaiStoredOffset(saleFollowUpDateUtc);
         }
 
         const { data, error } = await supabase
@@ -406,7 +402,6 @@ export default async function handler(req: any, res: any, env?: Record<string, s
           sale_follow_up_status: "cancelled",
           sale_follow_up_updated_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-          updated_at_thai: new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString(),
         };
 
         const { data, error } = await supabase

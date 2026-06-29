@@ -1,6 +1,7 @@
 /// <reference path="./deno.d.ts" />
 // @ts-ignore - URL import is supported by Deno runtime
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { bangkokDateTimeToUTC, bangkokDateOnlyToUTC } from '../_shared/thailandDateTime.ts';
 
 // CORS headers helper
 const corsHeaders = {
@@ -55,7 +56,7 @@ Deno.serve(async (req: Request) => {
           lead_id: leadId,
           status: formData.operation_status,
           note: formData.note,
-          next_follow_up: formData.next_follow_up ? new Date(formData.next_follow_up).toISOString() : null,
+          next_follow_up: bangkokDateTimeToUTC(formData.next_follow_up),
           next_follow_up_details: formData.next_follow_up_details || null,
           staff_id: userId,
           
@@ -121,7 +122,7 @@ Deno.serve(async (req: Request) => {
       if (hasEngineerAppointmentData) {
         const engineerAppointmentData = {
           productivity_log_id: logResult.id,
-          date: formData.site_visit_date ? new Date(formData.site_visit_date).toISOString() : null,
+          date: bangkokDateTimeToUTC(formData.site_visit_date),
           location: formData.location || null,
           appointment_type: 'engineer',
           status: 'scheduled',
@@ -145,7 +146,7 @@ Deno.serve(async (req: Request) => {
       if (formData.next_follow_up && formData.next_follow_up.trim() !== '') {
         const followUpAppointmentData = {
           productivity_log_id: logResult.id,
-          date: formData.next_follow_up ? new Date(formData.next_follow_up).toISOString() : null,
+          date: bangkokDateTimeToUTC(formData.next_follow_up),
           appointment_type: 'follow-up',
           status: 'scheduled',
           note: formData.next_follow_up_details || 'การนัดติดตามครั้งถัดไป'
@@ -227,7 +228,7 @@ Deno.serve(async (req: Request) => {
           installment_amount: formData.installment_type === 'amount' ? formData.installment_amount : null,
           installment_periods: formData.installment_type === 'full_payment' ? 1 : 
                               formData.installment_periods || null,
-          estimate_payment_date: formData.estimate_payment_date || null,
+          estimate_payment_date: bangkokDateOnlyToUTC(formData.estimate_payment_date) || formData.estimate_payment_date || null,
         };
         
         const { error: quotationError } = await supabase
@@ -244,7 +245,7 @@ Deno.serve(async (req: Request) => {
         if (formData.estimate_payment_date && formData.estimate_payment_date.trim() !== '') {
           const paymentAppointmentData = {
             productivity_log_id: logResult.id,
-            date: formData.estimate_payment_date ? new Date(formData.estimate_payment_date).toISOString() : null,
+            date: bangkokDateOnlyToUTC(formData.estimate_payment_date),
             appointment_type: 'payment',
             status: 'scheduled',
             note: `ประมาณการชำระเงิน ${formData.total_amount ? formData.total_amount.toLocaleString() + ' บาท' : ''} ${formData.payment_method ? '(' + formData.payment_method + ')' : ''}`

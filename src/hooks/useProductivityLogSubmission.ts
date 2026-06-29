@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/useToast";
 import { invalidateLeadRelatedQueries } from "@/lib/leads/invalidateLeadQueries";
 import { ProductivityLogFormData } from "./useProductivityLogForm";
+import { parseUserDateTimeToUTC } from "@/utils/thailandDateTime";
 
 export const useProductivityLogSubmission = (leadId: number, onSuccess: () => void) => {
   const { toast } = useToast();
@@ -29,7 +30,7 @@ export const useProductivityLogSubmission = (leadId: number, onSuccess: () => vo
           lead_id: leadId,
           status: data.operation_status,
           note: data.note, // รายละเอียดการติดตาม (ฟิลด์หลัก)
-          next_follow_up: data.next_follow_up ? new Date(data.next_follow_up).toISOString() : null,
+          next_follow_up: parseUserDateTimeToUTC(data.next_follow_up),
           next_follow_up_details: data.next_follow_up_details || null, // รายละเอียดการนัดติดตามครั้งถัดไป
 
           staff_id: currentUserId,
@@ -95,7 +96,7 @@ export const useProductivityLogSubmission = (leadId: number, onSuccess: () => vo
 
         const engineerAppointmentData = {
           productivity_log_id: logResult.id,
-          date: data.site_visit_date ? new Date(data.site_visit_date).toISOString() : null,
+          date: parseUserDateTimeToUTC(data.site_visit_date),
           location: data.location || null,
           appointment_type: 'engineer',
           status: 'scheduled',
@@ -124,7 +125,7 @@ export const useProductivityLogSubmission = (leadId: number, onSuccess: () => vo
 
         const followUpAppointmentData = {
           productivity_log_id: logResult.id,
-          date: data.next_follow_up ? new Date(data.next_follow_up).toISOString() : null,
+          date: parseUserDateTimeToUTC(data.next_follow_up),
           appointment_type: 'follow-up',
           status: 'scheduled',
           note: data.next_follow_up_details || 'การนัดติดตามครั้งถัดไป'
@@ -215,7 +216,7 @@ export const useProductivityLogSubmission = (leadId: number, onSuccess: () => vo
           installment_amount: data.installment_type === 'amount' ? data.installment_amount : null,
           installment_periods: data.installment_type === 'full_payment' ? 1 : 
                               data.installment_periods || null,
-          estimate_payment_date: data.estimate_payment_date || null,
+          estimate_payment_date: parseUserDateTimeToUTC(data.estimate_payment_date) || data.estimate_payment_date || null,
         };
         
         const { data: quotationResult, error: quotationError } = await supabase
@@ -234,7 +235,7 @@ export const useProductivityLogSubmission = (leadId: number, onSuccess: () => vo
           if (data.estimate_payment_date && data.estimate_payment_date.trim() !== '') {
             const paymentAppointmentData = {
               productivity_log_id: logResult.id,
-              date: data.estimate_payment_date ? new Date(data.estimate_payment_date).toISOString() : null,
+              date: parseUserDateTimeToUTC(data.estimate_payment_date),
               appointment_type: 'payment',
               status: 'scheduled',
               note: `ประมาณการชำระเงิน ${data.total_amount ? data.total_amount.toLocaleString() + ' บาท' : ''} ${data.payment_method ? '(' + data.payment_method + ')' : ''}`

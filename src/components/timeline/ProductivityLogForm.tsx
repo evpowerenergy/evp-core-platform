@@ -5,6 +5,7 @@ import ProductivityLogFormFields from "./form-sections/ProductivityLogFormFields
 import ProductivityLogFormActions from "./form-sections/ProductivityLogFormActions";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { datetimeFieldToBangkokInput, utcToBangkokDateOnly } from "@/utils/thailandDateTime";
 import { useCacheStrategy } from "@/lib/cacheStrategies";
 
 interface ProductivityLogFormProps {
@@ -19,42 +20,12 @@ const ProductivityLogForm = ({ leadId, onSuccess, isWholesale, isPackage, custom
   // ✅ ใช้ NO_CACHE strategy สำหรับ forms
   const noCacheStrategy = useCacheStrategy('NO_CACHE');
   
-  // ฟังก์ชันช่วยแปลงรูปแบบวันที่สำหรับ input datetime-local
-  const formatDateForInput = (dateString: string | null): string => {
-    if (!dateString) return '';
-    try {
-      // ใช้ toISOString() เพื่อแปลงเป็น UTC แล้วตัด timezone ออก
-      const date = new Date(dateString);
-      if (isNaN(date.getTime())) return '';
-      
-      // แปลงเป็นรูปแบบ YYYY-MM-DDTHH:mm สำหรับ input datetime-local
-      // ใช้ toISOString() แล้วตัดส่วน timezone และ seconds ออก
-      const isoString = date.toISOString();
-      // ตัดส่วน timezone และ seconds ออก: "2025-09-06T05:56:00.000Z" -> "2025-09-06T05:56"
-      return isoString.substring(0, 16);
-    } catch (error) {
-      console.error('❌ Error formatting date:', error);
-      return '';
-    }
-  };
+  const formatDateForInput = (dateThai: string | null, dateUtc: string | null): string =>
+    datetimeFieldToBangkokInput(dateThai, dateUtc);
 
-  // ฟังก์ชันช่วยแปลงรูปแบบวันที่สำหรับ input type="date" (YYYY-MM-DD)
-  const formatDateOnly = (dateString: string | null): string => {
-    if (!dateString) return '';
-    try {
-      const date = new Date(dateString);
-      if (isNaN(date.getTime())) return '';
-      
-      // แปลงเป็น YYYY-MM-DD สำหรับ input type="date"
-      const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const day = String(date.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    } catch (error) {
-      console.error('❌ Error formatting date:', error);
-      return '';
-    }
-  };
+  const formatDateOnly = (dateString: string | null): string =>
+    dateString ? utcToBangkokDateOnly(dateString) : '';
+
   const { data: latestLog } = useQuery({
     queryKey: ["latest-productivity-log", leadId],
     queryFn: async () => {
@@ -135,6 +106,7 @@ const ProductivityLogForm = ({ leadId, onSuccess, isWholesale, isPackage, custom
           .select(`
             id,
             date,
+            date_thai,
             location,
             building_details,
             installation_notes,
@@ -150,6 +122,7 @@ const ProductivityLogForm = ({ leadId, onSuccess, isWholesale, isPackage, custom
           .select(`
             id,
             date,
+            date_thai,
             appointment_type,
             note
           `)
@@ -325,11 +298,16 @@ const ProductivityLogForm = ({ leadId, onSuccess, isWholesale, isPackage, custom
         is_zero_down_payment: rest.is_zero_down_payment || false,
         down_payment_amount: rest.down_payment_amount || null,
         
-        // ข้อมูลจาก Follow-up appointment (ถ้ามี)
-        next_follow_up: formatDateForInput(followUpAppointment.date),
+        next_follow_up: formatDateForInput(
+          followUpAppointment.date_thai,
+          followUpAppointment.date || rest.next_follow_up
+        ),
         
         // ข้อมูลจาก Engineer appointment
-        site_visit_date: formatDateForInput(engineerAppointment.date),
+        site_visit_date: formatDateForInput(
+          engineerAppointment.date_thai,
+          engineerAppointment.date
+        ),
         location: engineerAppointment.location || '',
         building_info: engineerAppointment.building_details || '',
         installation_notes: engineerAppointment.installation_notes || '',
