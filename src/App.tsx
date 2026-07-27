@@ -18,6 +18,7 @@ import {
   InventoryOnlyRoute,
   ServiceTrackingOnlyRoute,
   MarketingOnlyRoute,
+  SolarMonitoringOnlyRoute,
   CRMOnlyRouteNew
 } from "@/components/ProtectedRoute";
 // Lazy load main pages
@@ -92,11 +93,19 @@ const BackofficePortal = lazy(() => import("./pages/BackofficePortal"));
 const ExecutiveDashboard = lazy(() => import("./pages/ExecutiveDashboard"));
 const EvMemberDashboard = lazy(() => import("./pages/ev-member/EvMemberDashboard"));
 const ChargingStationDashboard = lazy(() => import("./pages/charging-station/ChargingStationDashboard"));
+const SolarOverview = lazy(() => import("./pages/solar-monitoring/Overview"));
+const SolarPlants = lazy(() => import("./pages/solar-monitoring/Plants"));
+const SolarPlantDetail = lazy(() => import("./pages/solar-monitoring/PlantDetail"));
+const SolarDeviceDetail = lazy(() => import("./pages/solar-monitoring/DeviceDetail"));
+const SolarAlarms = lazy(() => import("./pages/solar-monitoring/Alarms"));
+const SolarDataHealth = lazy(() => import("./pages/solar-monitoring/DataHealth"));
+const SolarSettings = lazy(() => import("./pages/solar-monitoring/Settings"));
 
 // Inventory Layout
 import { InventoryLayout } from "./components/inventory/InventoryLayout";
 import { EvMemberLayout } from "./components/ev-member/EvMemberLayout";
 import { ChargingStationLayout } from "./components/charging-station/ChargingStationLayout";
+import { SolarMonitoringLayout } from "./components/solar-monitoring/SolarMonitoringLayout";
 
 // Service Tracking pages - Lazy loaded
 const ServiceTrackingDashboard = lazy(() => import("./pages/service-tracking/Dashboard"));
@@ -398,6 +407,28 @@ function AppContent() {
                   <ProtectedRoute requiredRoles={['super_admin', 'manager_sale', 'manager_marketing', 'back_office']}>
                     <ChargingStationLayout><ChargingStationDashboard /></ChargingStationLayout>
                   </ProtectedRoute>
+                } />
+                <Route path="/solar-monitoring" element={<Navigate to="/solar-monitoring/overview" replace />} />
+                <Route path="/solar-monitoring/overview" element={
+                  <SolarMonitoringOnlyRoute><SolarMonitoringLayout><SolarOverview /></SolarMonitoringLayout></SolarMonitoringOnlyRoute>
+                } />
+                <Route path="/solar-monitoring/plants" element={
+                  <SolarMonitoringOnlyRoute><SolarMonitoringLayout><SolarPlants /></SolarMonitoringLayout></SolarMonitoringOnlyRoute>
+                } />
+                <Route path="/solar-monitoring/plants/:plantId" element={
+                  <SolarMonitoringOnlyRoute><SolarMonitoringLayout><SolarPlantDetail /></SolarMonitoringLayout></SolarMonitoringOnlyRoute>
+                } />
+                <Route path="/solar-monitoring/devices/:deviceId" element={
+                  <SolarMonitoringOnlyRoute><SolarMonitoringLayout><SolarDeviceDetail /></SolarMonitoringLayout></SolarMonitoringOnlyRoute>
+                } />
+                <Route path="/solar-monitoring/alarms" element={
+                  <SolarMonitoringOnlyRoute><SolarMonitoringLayout><SolarAlarms /></SolarMonitoringLayout></SolarMonitoringOnlyRoute>
+                } />
+                <Route path="/solar-monitoring/data-health" element={
+                  <SolarMonitoringOnlyRoute><SolarMonitoringLayout><SolarDataHealth /></SolarMonitoringLayout></SolarMonitoringOnlyRoute>
+                } />
+                <Route path="/solar-monitoring/settings" element={
+                  <ProtectedRoute requiredRoles={['super_admin']}><SolarMonitoringLayout><SolarSettings /></SolarMonitoringLayout></ProtectedRoute>
                 } />
                 <Route path="/reports/sales-unsuccessful" element={
                   <ProtectedRoute requiredRoles={['manager_sale', 'manager_marketing', 'super_admin']}>

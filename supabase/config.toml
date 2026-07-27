@@ -260,3 +260,18 @@ entrypoint = "./functions/marketing-facebook-ads-summary/index.ts"
 enabled = true
 verify_jwt = false
 entrypoint = "./functions/marketing-google-ads-summary/index.ts"
+
+[functions.solar-huawei-sync-dispatcher]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/solar-huawei-sync-dispatcher/index.ts"
+
+[functions.solar-huawei-sync-worker]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/solar-huawei-sync-worker/index.ts"
+
+[functions.solar-huawei-admin]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/solar-huawei-admin/index.ts"

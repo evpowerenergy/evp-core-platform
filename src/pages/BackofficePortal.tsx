@@ -10,6 +10,7 @@ import {
   Zap,
   Crown,
   BatteryCharging,
+  Sun,
 } from "lucide-react";
 import UserProfileDropdown from "@/components/UserProfileDropdown";
 import { AppointmentToastNotifier } from "@/components/notifications/AppointmentToastNotifier";
@@ -58,6 +59,16 @@ const BackofficePortal = () => {
       status: "active",
       route: "/charging-station",
       requiredPermission: () => permissions.canAccessEvMember,
+      color: "amber",
+    },
+    {
+      id: "solar-monitoring",
+      title: "Solar Monitoring",
+      description: "ติดตามการผลิต อุปกรณ์ Alarm และคุณภาพข้อมูลจาก Huawei SmartPVMS",
+      icon: Sun,
+      status: "active",
+      route: "/solar-monitoring/overview",
+      requiredPermission: () => permissions.canAccessSolarMonitoring,
       color: "amber",
     },
     {

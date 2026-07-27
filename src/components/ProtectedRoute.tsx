@@ -156,6 +156,12 @@ export const MarketingOnlyRoute: React.FC<{ children: React.ReactNode }> = ({ ch
   </ProtectedRoute>
 );
 
+export const SolarMonitoringOnlyRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <ProtectedRoute requiredRoles={['super_admin', 'manager_sale', 'manager_marketing', 'engineer']}>
+    {children}
+  </ProtectedRoute>
+);
+
 // ระบบ CRM: super_admin, manager_sale, manager_marketing, manager_hr, sale_package, sale_wholesale, admin_page
 export const CRMOnlyRouteNew: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <ProtectedRoute requiredRoles={['super_admin', 'manager_sale', 'manager_marketing', 'manager_hr', 'sale_package', 'sale_wholesale', 'admin_page']}>

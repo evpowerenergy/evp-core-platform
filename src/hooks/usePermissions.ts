@@ -38,6 +38,7 @@ export interface UserPermissions {
   canAccessChatBotMonitor: boolean;
   /** EV Member (/ev-member) — manager + super_admin + back_office */
   canAccessEvMember: boolean;
+  canAccessSolarMonitoring: boolean;
   isBackOffice: boolean;
   isEngineer: boolean;
   isMarketing: boolean;
@@ -82,6 +83,7 @@ export const usePermissions = (): UserPermissions => {
     canAccessMarketing: false,
     canAccessChatBotMonitor: false,
     canAccessEvMember: false,
+    canAccessSolarMonitoring: false,
     isBackOffice: false,
     isEngineer: false,
     isMarketing: false,
@@ -139,6 +141,7 @@ export const usePermissions = (): UserPermissions => {
 
   // EV Member: super_admin, manager_sale, manager_marketing, back_office (Hub + รายงานลูกค้าปิดขาย)
   const canAccessEvMember = isSuperAdmin || isManagerSaleOrMarketing || isBackOffice;
+  const canAccessSolarMonitoring = isSuperAdmin || isManagerSaleOrMarketing || isEngineer;
 
   const isAdminOrManager = isSuperAdmin || isManagerSaleOrMarketing || isManagerHr || isAdminPage;
   const isSalesRole = isSuperAdmin || isManagerSaleOrMarketing || isSalePackage || isSaleWholesale || isAdminPage;
@@ -192,6 +195,7 @@ export const usePermissions = (): UserPermissions => {
     canAccessMarketing,
     canAccessChatBotMonitor,
     canAccessEvMember,
+    canAccessSolarMonitoring,
     isBackOffice,
     isEngineer,
     isMarketing,
