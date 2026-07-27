@@ -41,3 +41,4 @@ docs
 
 # Local debug / tooling
 database-debug
+scripts/deploy-gcp.sh
